@@ -1,4 +1,4 @@
-const C = 'ht-v1';
+const C = 'ht-v2';
 const A = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(A))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

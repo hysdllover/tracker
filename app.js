@@ -6,6 +6,19 @@ const KEY = 'ht.data', CFG = 'ht.cfg', TMR = 'ht.timer';
 const FILE = 'habit-tracker.json', DESC = 'habit-tracker-sync';
 const WD = '일월화수목금토';
 const PAL = ['#B5C7DE', '#D4C5E2', '#B8D4C2', '#EBCFB8', '#E6C3C8', '#C3D8D6', '#E2DCB5', '#C9C4BD'];
+const THEMES = [
+  ['세이지', '#B8D4C2', '#B5C7DE', '#D4C5E2'], ['라벤더', '#CFC6E3', '#B9C9E4', '#E6CFDA'], ['샌드', '#DCCFB8', '#BFCBD3', '#E5C9BC'],
+  ['로즈', '#E6C3C8', '#C3CCE0', '#E9D5C0'], ['민트', '#BFDDD6', '#C6D3E8', '#D9E6C4'], ['모노', '#CFCFCB', '#B9BCC2', '#DADAD5'],
+];
+const FONTS = {
+  pretendard: ['Pretendard', '"Pretendard Variable",Pretendard'],
+  system: ['시스템 (SF)', '-apple-system,"SF Pro Text","Apple SD Gothic Neo"'],
+  noto: ['Noto Sans KR', '"Noto Sans KR"', 'Noto+Sans+KR:wght@100..900'],
+  plex: ['IBM Plex Sans KR', '"IBM Plex Sans KR"', 'IBM+Plex+Sans+KR:wght@100;200;300;400;500'],
+  serif: ['Noto Serif KR', '"Noto Serif KR"', 'Noto+Serif+KR:wght@200..900'],
+  gowun: ['고운돋움', '"Gowun Dodum"', 'Gowun+Dodum'],
+};
+const DEF_P = { font: 'pretendard', size: 13, weight: 300, mode: 'auto', life: '#B8D4C2', study: '#B5C7DE', accent: '#D4C5E2', heat: 'life' };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => Date.now();
 const pad = n => String(n).padStart(2, '0');
@@ -118,6 +131,7 @@ function merge(a, b) {
   return {
     habits: mergeArr(a.habits, b.habits), subjects: mergeArr(a.subjects, b.subjects),
     sessions: mergeArr(a.sessions, b.sessions), logs, u: Math.max(a.u || 0, b.u || 0),
+    prefs: (b.prefs?.u || 0) > (a.prefs?.u || 0) ? b.prefs : a.prefs,
   };
 }
 let syncing = false, syncT = null, syncMsg = '';
@@ -194,7 +208,7 @@ function beep() {
 }
 function addSession(min) {
   const s = subj(T.sid);
-  S.sessions.push({ id: uid(), sid: T.sid, d: today(), min, u: now() });
+  S.sessions.push({ id: uid(), sid: T.sid, d: today(), h: new Date(now() - min * 60000).getHours(), min, u: now() });
   commit();
   toast(`${s ? s.name : '공부'} ${fmtMin(min)} 기록`);
 }
@@ -234,8 +248,8 @@ let ym = today().slice(0, 7);
 
 function ring(r, label) {
   const C = 150.8;
-  return `<div class="ring"><svg viewBox="0 0 58 58"><circle cx="29" cy="29" r="24" stroke="var(--line)" stroke-width="3"/>
-    <circle cx="29" cy="29" r="24" stroke="var(--life-ink)" stroke-width="3" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - r)}" opacity=".7"/></svg><span>${label}</span></div>`;
+  return `<div class="ring"><svg viewBox="0 0 58 58"><circle cx="29" cy="29" r="24" style="stroke:var(--line)" stroke-width="2.4"/>
+    <circle cx="29" cy="29" r="24" style="stroke:var(--life-ink)" stroke-width="2.4" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - r)}" opacity=".7"/></svg><span>${label}</span></div>`;
 }
 function row(h, d) {
   const v = val(h, d), t = goal(h), ok = v >= t, st = streak(h);
@@ -245,27 +259,128 @@ function row(h, d) {
   if (h.link) meta.push('타이머 연동');
   if (h.days.length < 7) meta.push([1, 2, 3, 4, 5, 6, 0].filter(i => h.days.includes(i)).map(i => WD[i]).join(''));
   if (st) meta.push(`${st}일 연속`);
+  const w7 = [...Array(7)].map((_, i) => addD(d, i - 6)).map(x => `<i class="${!sched(h, x) ? 'n' : done(h, x) ? 'y' : val(h, x) > 0 ? 'p' : ''}"></i>`).join('');
   let ctl;
   if (h.type === 'check') ctl = `<button class="chk ${ok ? 'on' : ''}" data-act="tog" data-id="${h.id}" aria-label="완료">${I.check}</button>`;
   else if (h.link) ctl = `<span class="val">${Math.round(v)}<small>/${t}${unit}</small></span>`;
   else ctl = `<div class="step"><button class="ib" data-act="inc" data-id="${h.id}" data-n="-1">${I.minus}</button><span class="val">${v}<small>/${t}${unit}</small></span><button class="ib" data-act="inc" data-id="${h.id}" data-n="1">${I.plus}</button></div>`;
-  return `<div class="hrow ${h.cat} ${ok ? 'ok' : ''}"><div class="hinfo"><div class="hname">${esc(h.name)}</div><div class="hmeta">${meta.join(' · ') || '매일'}</div></div>${ctl}${h.type !== 'check' ? `<i class="pbar" style="width:${Math.min(1, v / t) * 100}%"></i>` : ''}</div>`;
+  return `<div class="hrow ${h.cat} ${ok ? 'ok' : ''}"><div class="hinfo"><div class="hname">${esc(h.name)}</div><div class="hmeta"><span class="wd7">${w7}</span><span>${meta.join(' · ') || '매일'}</span></div></div>${ctl}${h.type !== 'check' ? `<i class="pbar" style="width:${Math.min(1, v / t) * 100}%"></i>` : ''}</div>`;
 }
-function weekChart(end) {
-  const sm = studyMap(), D = [...Array(7)].map((_, i) => addD(end, i - 6));
-  const mx = Math.max(60, ...D.map(d => sm[d]?.all || 0));
-  return `<div class="wk">${D.map(d => {
-    const m = sm[d]?.all || 0;
-    return `<div class="${d === end ? 't' : ''}"><span>${m ? short(m) : ''}</span><i style="height:${m / mx * 100}%"></i><span>${WD[pd(d).getDay()]}</span></div>`;
-  }).join('')}</div><div class="sub" style="text-align:right;margin-top:8px">합계 ${fmtMin(D.reduce((a, d) => a + (sm[d]?.all || 0), 0))}</div>`;
+const lvl = r => r == null ? 'na' : r === 0 ? '' : r < .34 ? 'l1' : r < .67 ? 'l2' : r < 1 ? 'l3' : 'l4';
+const tipDate = d => `${+d.slice(5, 7)}/${+d.slice(8)} (${WD[pd(d).getDay()]})`;
+const niceMin = m => m <= 60 ? 60 : m <= 120 ? Math.ceil(m / 30) * 30 : Math.ceil(m / 60) * 60;
+const pct = r => Math.round(r * 100) + '%';
+function rateOf(d) { const hs = habits().filter(h => sched(h, d)); return hs.length ? [hs.filter(h => done(h, d)).length, hs.length] : null; }
+
+/* 과목별 누적 막대 */
+function studyBars(D, lab) {
+  const sm = studyMap(), tot = D.map(d => sm[d]?.all || 0), mx = niceMin(Math.max(...tot));
+  const used = S.subjects.filter(s => D.some(d => sm[d]?.[s.id])).sort((a, b) => a.o - b.o);
+  const bars = D.map((d, i) => {
+    const m = tot[i], parts = used.filter(s => sm[d]?.[s.id]);
+    const tip = `${tipDate(d)} · ${m ? fmtMin(m) : '기록 없음'}${parts.length > 1 ? '\n' + parts.map(s => `${s.name} ${fmtMin(sm[d][s.id])}`).join(' · ') : ''}`;
+    return `<div data-tip="${esc(tip)}"><div class="st" style="height:${m / mx * 100}%">${parts.map(s => `<i style="--c:${s.color};flex:${sm[d][s.id]} 1 0"></i>`).join('')}</div></div>`;
+  }).join('');
+  return `<div class="plot"><div class="gl" style="top:0"><span>${short(mx)}</span></div><div class="gl" style="top:50%"><span>${short(mx / 2)}</span></div><div class="gl base" style="top:100%"></div><div class="bars">${bars}</div></div>
+  <div class="xax">${D.map((d, i) => `<span>${lab(d, i)}</span>`).join('')}</div>
+  ${used.length > 1 ? `<div class="legend">${used.map(s => `<span><i style="--c:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div>` : ''}`;
+}
+
+/* 일별 달성률 영역 그래프 */
+function rateLine(D) {
+  const t = today(), n = D.length, X = i => (i + .5) / n * 100, Y = r => 6 + (1 - r) * 88;
+  const pts = D.map((d, i) => [i, d <= t ? dayRate(d) : null]).filter(p => p[1] != null);
+  if (!pts.length) return '<p class="empty">아직 기록이 없습니다.</p>';
+  const line = pts.map((p, k) => `${k ? 'L' : 'M'}${X(p[0]).toFixed(2)} ${Y(p[1]).toFixed(2)}`).join('');
+  const L = pts[pts.length - 1], lx = X(L[0]), ly = Y(L[1]);
+  return `<div class="plot">${[1, .5, 0].map(r => `<div class="gl ${r ? '' : 'base'}" style="top:${Y(r)}%"><span>${r * 100}</span></div>`).join('')}
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none"><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--heat);stop-opacity:.65"/><stop offset="1" style="stop-color:var(--heat);stop-opacity:0"/></linearGradient></defs>
+    <path d="${line}L${lx.toFixed(2)} ${Y(0)}L${X(pts[0][0]).toFixed(2)} ${Y(0)}Z" style="fill:url(#ga);stroke:none"/>
+    <path d="${line}" style="fill:none;stroke:var(--h4);stroke-width:1.5" vector-effect="non-scaling-stroke"/></svg>
+    <i class="pt" style="left:${lx}%;top:${ly}%"></i><span class="pt-l" style="left:${lx}%;top:${ly}%;${lx < 20 ? 'transform:translate(10%,-160%)' : ''}">${pct(L[1])}</span>
+    <div class="hits">${D.map(d => { const r = d <= t ? rateOf(d) : null; return `<div data-tip="${tipDate(d)} · ${r ? `${pct(r[0] / r[1])} (${r[0]}/${r[1]})` : '-'}"></div>`; }).join('')}</div></div>
+  <div class="xax">${D.map((d, i) => `<span>${i % 7 === 0 ? +d.slice(8) : ''}</span>`).join('')}</div>`;
+}
+
+/* 과목 도넛 */
+function donut(list, tot) {
+  let acc = 0;
+  const g = list.length > 1 ? .8 : 0;
+  const segs = list.map(s => {
+    const p = s.m / tot * 100, w = Math.max(.01, p - g);
+    const c = `<circle cx="50" cy="50" r="42" pathLength="100" style="stroke:${s.color};stroke-width:9;fill:none" stroke-dasharray="${w} ${100 - w}" stroke-dashoffset="${-acc}" data-tip="${esc(s.name)} · ${fmtMin(s.m)} · ${Math.round(p)}%"/>`;
+    acc += p; return c;
+  }).join('');
+  return `<div class="donut"><div class="dc"><svg viewBox="0 0 100 100">${segs}</svg><span><div><b>${short(tot)}</b>합계</div></span></div>
+  <table class="tb">${list.map(s => `<tr><td><span class="dot" style="--c:${s.color};margin-right:.45rem"></span>${esc(s.name)}</td><td class="num">${fmtMin(s.m)}</td><td class="num sub">${Math.round(s.m / tot * 100)}%</td></tr>`).join('')}</table></div>`;
+}
+
+/* 습관 × 날짜 매트릭스 */
+function matrix(D) {
+  const t = today(), hs = habits();
+  if (!hs.length) return '<p class="empty">습관이 없습니다.</p>';
+  const head = D.map((d, i) => `<th>${i % 7 === 0 ? +d.slice(8) : ''}</th>`).join('');
+  const rows = hs.map(h => {
+    const sc = D.filter(d => d <= t && sched(h, d)), dn = sc.filter(d => done(h, d)).length;
+    return `<tr class="${h.cat}"><td class="nm">${esc(h.name)}</td>${D.map(d => {
+      if (!sched(h, d)) return '<td><i class="n"></i></td>';
+      if (d > t) return '<td><i class="f"></i></td>';
+      const v = val(h, d), ok = v >= goal(h);
+      const st = h.type === 'check' ? (ok ? '완료' : '미완료') : `${Math.round(v)}/${goal(h)}${h.type === 'time' ? '분' : '회'}`;
+      return `<td><i class="${ok ? 'y' : v > 0 ? 'p' : ''}" data-tip="${esc(h.name)} · ${tipDate(d)}\n${st}"></i></td>`;
+    }).join('')}<td class="rt">${sc.length ? Math.round(dn / sc.length * 100) + '%' : '-'}</td></tr>`;
+  }).join('');
+  return `<table class="mx"><thead><tr><th class="nm"></th>${head}<th class="rt">달성</th></tr></thead><tbody>${rows}</tbody></table>
+  <div class="legend"><span><i style="--c:var(--life)"></i>일상</span><span><i style="--c:var(--study)"></i>공부</span><span><i style="--c:color-mix(in srgb,var(--life) 45%,var(--h0))"></i>부분 달성</span></div>`;
+}
+
+/* 최근 1년 잔디 */
+function yearHeat() {
+  const t = today(), start = addD(t, -(52 * 7 + pd(t).getDay()));
+  let cells = '', mons = '';
+  for (let w = 0; w < 53; w++) {
+    const old = w < 27 ? 'old' : '', ws = addD(start, w * 7);
+    let lab = '';
+    for (let k = 0; k < 7; k++) { const d = addD(ws, k); if (d.slice(8) === '01' && d <= t) lab = `${+d.slice(5, 7)}월`; }
+    mons += `<span class="${old}">${lab}</span>`;
+    for (let k = 0; k < 7; k++) {
+      const d = addD(ws, k);
+      if (d > t) { cells += `<i class="fu ${old}"></i>`; continue; }
+      const r = rateOf(d);
+      cells += `<i class="${old} ${r ? lvl(r[0] / r[1]) : ''}" data-tip="${tipDate(d)} · ${r ? `${pct(r[0] / r[1])} (${r[0]}/${r[1]})` : '기록 없음'}"></i>`;
+    }
+  }
+  return `<div class="yhw"><div></div><div class="yhm">${mons}</div><div class="yhd">${['', '월', '', '수', '', '금', ''].map(x => `<span>${x}</span>`).join('')}</div><div class="yh">${cells}</div></div>
+  <div class="seq">적음 <i></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> 많음</div>`;
+}
+
+/* 요일 패턴 (최근 8주) */
+function weekdayTable() {
+  const t = today(), D = [...Array(56)].map((_, i) => addD(t, i - 55)), sm = studyMap();
+  const rows = [1, 2, 3, 4, 5, 6, 0].map(w => {
+    const dd = D.filter(d => pd(d).getDay() === w), rs = dd.map(dayRate).filter(r => r != null);
+    return { w, ar: rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null, am: dd.reduce((a, d) => a + (sm[d]?.all || 0), 0) / dd.length };
+  });
+  const mm = Math.max(1, ...rows.map(r => r.am)), br = Math.max(...rows.map(r => r.ar || 0));
+  return `<table class="tb"><thead><tr><th>요일</th><th class="bc">달성률</th><th class="num"></th><th class="bc">평균 공부</th><th class="num"></th></tr></thead><tbody>${rows.map(r => `<tr><td${r.ar && r.ar === br ? ' style="font-weight:calc(var(--fw) + 200)"' : ''}>${WD[r.w]}</td><td class="bc"><div class="ibar" style="--c:var(--heat)"><i style="width:${(r.ar || 0) * 100}%"></i></div></td><td class="num">${r.ar == null ? '-' : pct(r.ar)}</td><td class="bc"><div class="ibar" style="--c:var(--study)"><i style="width:${r.am / mm * 100}%"></i></div></td><td class="num">${r.am ? short(r.am) : '-'}</td></tr>`).join('')}</tbody></table>`;
+}
+
+/* 시간대별 공부 */
+function hourStrip(D) {
+  const set = new Set(D), hrs = Array(24).fill(0);
+  for (const x of S.sessions) if (!x.del && set.has(x.d) && x.h != null) hrs[x.h] += x.min;
+  const mx = Math.max(...hrs);
+  if (!mx) return '<p class="empty">타이머 기록부터 시간대가 집계됩니다.</p>';
+  return `<div class="sub" style="margin-bottom:.7rem">가장 많이 공부한 시간대 <span style="color:var(--text)">${hrs.indexOf(mx)}시</span></div>
+  <div class="hours">${hrs.map((m, h) => `<i style="background:${m ? `color-mix(in srgb,var(--study-ink) ${Math.round(12 + m / mx * 88)}%,var(--h0))` : 'var(--h0)'}" data-tip="${h}시 · ${m ? fmtMin(m) : '없음'}"></i>`).join('')}</div>
+  <div class="hlab"><span>0시</span><span>6시</span><span>12시</span><span>18시</span></div>`;
 }
 function heat(m) {
   const [y, mo] = m.split('-').map(Number), n = new Date(y, mo, 0).getDate(), off = new Date(y, mo - 1, 1).getDay(), t = today();
   let h = [...WD].map(w => `<div class="wd">${w}</div>`).join('') + '<div></div>'.repeat(off);
   for (let i = 1; i <= n; i++) {
     const d = `${m}-${pad(i)}`;
-    let c = 'fu';
-    if (d <= t) { const r = dayRate(d); c = r == null ? 'na' : r === 0 ? '' : r < .34 ? 'l1' : r < .67 ? 'l2' : r < 1 ? 'l3' : 'l4'; }
+    const c = d > t ? 'fu' : lvl(dayRate(d));
     h += `<button class="d ${c} ${d === t ? 'td' : ''}" data-act="goto" data-d="${d}">${i}</button>`;
   }
   return `<div class="cal">${h}</div>`;
@@ -284,7 +399,7 @@ function vToday() {
     ${hs.length ? grp('life') + grp('study') : '<p class="empty">이 날 예정된 습관이 없습니다.</p>'}
     <h2>한 줄 회고</h2><textarea class="note" id="note" rows="2" placeholder="오늘 하루를 한 줄로">${esc(S.logs[d]?.n?.[0] || '')}</textarea>
   </section><aside>
-    <h2>최근 7일 공부</h2><div class="card">${weekChart(d)}</div>
+    <h2>최근 7일 공부</h2><div class="card">${studyBars([...Array(7)].map((_, i) => addD(d, i - 6)), x => WD[pd(x).getDay()])}</div>
     <h2>${+d.slice(5, 7)}월 달성</h2><div class="card">${heat(d.slice(0, 7))}</div>
   </aside></div>`;
 }
@@ -295,10 +410,10 @@ function vTimer() {
   const t = today(), list = S.sessions.filter(s => !s.del && s.d === t).reverse();
   const tot = list.reduce((a, s) => a + s.min, 0);
   return `<header class="top"><h1>타이머</h1></header>
-  <div class="seg" data-f="mode" style="margin-top:8px"><button data-act="seg" data-v="sw" class="${T.mode === 'sw' ? 'on' : ''}">스톱워치</button><button data-act="seg" data-v="pomo" class="${T.mode === 'pomo' ? 'on' : ''}">뽀모도로</button></div>
+  <div class="seg" data-f="tmode" style="margin-top:8px"><button data-act="seg" data-v="sw" class="${T.mode === 'sw' ? 'on' : ''}">스톱워치</button><button data-act="seg" data-v="pomo" class="${T.mode === 'pomo' ? 'on' : ''}">뽀모도로</button></div>
   <div class="chips">${subs.map(s => `<button class="chip ${s.id === T.sid ? 'on' : ''}" data-act="sub" data-id="${s.id}" style="--c:${s.color}">${esc(s.name)}</button>`).join('') || '<span class="sub">설정에서 과목을 추가하세요.</span>'}</div>
   <div class="card tm">
-    <div class="dial">${T.mode === 'pomo' ? `<svg viewBox="0 0 236 236"><circle cx="118" cy="118" r="110" stroke="var(--line)" stroke-width="2"/><circle id="prog" cx="118" cy="118" r="110" stroke="${T.phase === 'focus' ? 'var(--study-ink)' : 'var(--life-ink)'}" stroke-width="2.5" stroke-dasharray="691.15" stroke-dashoffset="691.15" opacity=".7"/></svg>` : ''}
+    <div class="dial">${T.mode === 'pomo' ? `<svg viewBox="0 0 236 236"><circle cx="118" cy="118" r="110" style="stroke:var(--line)" stroke-width="2"/><circle id="prog" cx="118" cy="118" r="110" style="stroke:${T.phase === 'focus' ? 'var(--study-ink)' : 'var(--life-ink)'}" stroke-width="2" stroke-dasharray="691.15" stroke-dashoffset="691.15" opacity=".7"/></svg>` : ''}
       <div><div class="clock" id="clock">00:00</div><div class="phase" id="phase"></div></div></div>
     <div class="tbtns"><button class="btn pri" id="tstart" data-act="tstart">시작</button><button class="btn" data-act="tstop">${T.mode === 'pomo' && T.phase === 'brk' ? '휴식 건너뛰기' : '종료·저장'}</button></div>
     ${T.mode === 'pomo' ? `<div class="pset">집중 <input type="number" inputmode="numeric" id="pf" value="${T.focus}" min="1"> 분 · 휴식 <input type="number" inputmode="numeric" id="pb" value="${T.brk}" min="1"> 분</div>` : ''}
@@ -312,29 +427,52 @@ function monthDays(m) {
   return [...Array(new Date(y, mo, 0).getDate())].map((_, i) => `${m}-${pad(i + 1)}`);
 }
 function vStats() {
-  const D = monthDays(ym), past = D.filter(d => d <= today()), sm = studyMap();
-  const rates = past.map(dayRate).filter(r => r != null);
-  const avg = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 100) : 0;
-  const tot = past.reduce((a, d) => a + (sm[d]?.all || 0), 0);
+  const D = monthDays(ym), t = today(), past = D.filter(d => d <= t), sm = studyMap(), [y, mo] = ym.split('-').map(Number);
+  const avgOf = days => { const r = days.map(dayRate).filter(x => x != null); return r.length ? r.reduce((a, b) => a + b, 0) / r.length : null; };
+  const pmD = pd(ym + '-01'); pmD.setMonth(pmD.getMonth() - 1);
+  const avg = avgOf(past), pavg = avgOf(monthDays(ds(pmD).slice(0, 7)).filter(d => d <= t));
+  const delta = avg != null && pavg != null ? Math.round((avg - pavg) * 100) : null;
+  const perfect = past.filter(d => dayRate(d) === 1).length;
+  const tot = past.reduce((a, d) => a + (sm[d]?.all || 0), 0), studied = past.filter(d => sm[d]?.all).length;
+  const best = habits().map(h => [h, streak(h)]).sort((a, b) => b[1] - a[1])[0];
   const subs = S.subjects.map(s => ({ ...s, m: past.reduce((a, d) => a + (sm[d]?.[s.id] || 0), 0) })).filter(s => s.m > 0).sort((a, b) => b.m - a.m);
-  const [y, mo] = ym.split('-').map(Number);
-  const hrows = habits().map(h => {
-    const sc = past.filter(d => sched(h, d)), dn = sc.filter(d => done(h, d)).length, p = sc.length ? dn / sc.length : 0;
-    return `<div class="srow" style="display:block"><div style="display:flex;justify-content:space-between"><span>${esc(h.name)}</span><span class="sub">${dn}/${sc.length}일 · ${streak(h)}일 연속</span></div><div class="hb" style="--c:var(--${h.cat})"><i style="width:${p * 100}%"></i></div></div>`;
-  }).join('');
-  const wkEnd = ym === today().slice(0, 7) ? today() : D[D.length - 1];
   return `<header class="top"><h1>통계</h1><div class="mnav"><button class="ib" data-act="mon" data-n="-1">${I.l}</button><span>${y}. ${pad(mo)}</span><button class="ib" data-act="mon" data-n="1">${I.r}</button></div></header>
-  <div class="tiles" style="margin-top:8px"><div class="tile"><span class="sub">평균 달성률</span><b>${avg}%</b></div><div class="tile"><span class="sub">완벽한 날</span><b>${rates.filter(r => r === 1).length}일</b></div><div class="tile"><span class="sub">공부 시간</span><b>${short(tot)}</b></div></div>
+  <div class="tiles" style="margin-top:.6rem">
+    <div class="tile"><span class="sub">평균 달성률</span><b>${avg == null ? '-' : pct(avg)}</b><small>${delta == null ? '지난달 기록 없음' : `지난달 대비 ${delta >= 0 ? '+' : ''}${delta}%p`}</small></div>
+    <div class="tile"><span class="sub">완벽한 날</span><b>${perfect}일</b><small>${past.length}일 중</small></div>
+    <div class="tile"><span class="sub">공부 시간</span><b>${short(tot)}</b><small>공부한 날 평균 ${studied ? short(tot / studied) : '-'}</small></div>
+    <div class="tile"><span class="sub">최고 연속</span><b>${best ? best[1] : 0}일</b><small>${best && best[1] ? esc(best[0].name) : '-'}</small></div>
+  </div>
   <div class="grid2"><div>
-    <h2>달성 캘린더</h2><div class="card">${heat(ym)}</div>
-    <h2>습관별</h2><div class="card list">${hrows || '<p class="empty">습관이 없습니다.</p>'}</div>
+    <h2>일별 달성률</h2><div class="card">${rateLine(D)}</div>
+    <h2>습관 매트릭스</h2><div class="card">${matrix(D)}</div>
   </div><div>
-    <h2>7일 공부 (${+wkEnd.slice(5, 7)}/${+wkEnd.slice(8)}까지)</h2><div class="card">${weekChart(wkEnd)}</div>
-    <h2>과목 비율</h2><div class="card">${tot ? `<div class="stack">${subs.map(s => `<i style="width:${s.m / tot * 100}%;background:${s.color}"></i>`).join('')}</div>${subs.map(s => `<div class="kv"><span><span class="dot" style="--c:${s.color};display:inline-block;margin-right:6px"></span>${esc(s.name)}</span><span>${fmtMin(s.m)} · ${Math.round(s.m / tot * 100)}%</span></div>`).join('')}` : '<p class="empty">이번 달 공부 기록이 없습니다.</p>'}</div>
-    <button class="btn" style="width:100%;margin-top:14px" data-act="report">A4 월간 리포트</button>
+    <h2>일별 공부 시간</h2><div class="card">${studyBars(D, (d, i) => i % 7 === 0 ? +d.slice(8) : '')}</div>
+    <h2>과목 비율</h2><div class="card">${tot ? donut(subs, tot) : '<p class="empty">이 달의 공부 기록이 없습니다.</p>'}</div>
+  </div></div>
+  <h2>최근 1년</h2><div class="card">${yearHeat()}</div>
+  <div class="grid2"><div>
+    <h2>요일 패턴 · 최근 8주</h2><div class="card">${weekdayTable()}</div>
+  </div><div>
+    <h2>시간대별 공부 · ${mo}월</h2><div class="card">${hourStrip(past)}</div>
+    <button class="btn" style="width:100%;margin-top:1rem" data-act="report">A4 월간 리포트</button>
   </div></div>`;
 }
 
+function designCard() {
+  const p = P();
+  return `<h2>디자인</h2><div class="card">
+    <div class="preview"><div class="big">오늘도 꾸준히</div><div>작고 얇은 글씨 · 0123456789</div><div class="sub">글꼴과 색상이 바로 적용됩니다</div></div>
+    <div class="fld"><span>색상 테마</span><div class="pre">${THEMES.map((t, i) => `<button data-act="theme" data-i="${i}" class="${p.life === t[1] && p.study === t[2] && p.accent === t[3] ? 'on' : ''}"><span class="tri">${t.slice(1).map(c => `<i style="--c:${c}"></i>`).join('')}</span>${t[0]}</button>`).join('')}</div></div>
+    <div class="fld"><span>직접 고르기</span><div class="crow">${[['life', '일상'], ['study', '공부'], ['accent', '강조']].map(([k, l]) => `<label class="cp"><input type="color" data-pref="${k}" value="${p[k]}">${l}</label>`).join('')}</div></div>
+    <div class="fld"><span>잔디·달성 색</span>${seg('pref:heat', [['life', '일상'], ['study', '공부'], ['accent', '강조']], p.heat)}</div>
+    <div class="fld"><span>글꼴</span><select data-pref="font">${Object.entries(FONTS).map(([k, f]) => `<option value="${k}"${k === p.font ? ' selected' : ''}>${f[0]}</option>`).join('')}</select></div>
+    <div class="fld"><span>글자 크기 <em id="fsv">${p.size}px</em></span><input type="range" min="11" max="16" step="0.5" data-pref="size" value="${p.size}"></div>
+    <div class="fld"><span>굵기</span>${seg('pref:weight', [['200', '가늘게'], ['300', '얇게'], ['400', '보통']], String(p.weight))}</div>
+    <div class="fld"><span>화면</span>${seg('pref:mode', [['auto', '자동'], ['light', '라이트'], ['dark', '다크']], p.mode)}</div>
+    <button class="btn" data-act="preset-reset">기본값으로</button>
+  </div>`;
+}
 function vSet() {
   const TY = { check: '완료', count: '횟수', time: '시간' };
   return `<header class="top"><h1>설정</h1></header>
@@ -345,6 +483,7 @@ function vSet() {
   <h2>과목</h2><div class="card list">${subjects().map(s => `<div class="srow"><span class="dot" style="--c:${s.color}"></span><span class="grow">${esc(s.name)}</span><button class="ib" data-act="sedit" data-id="${s.id}" aria-label="편집">${I.edit}</button></div>`).join('') || '<p class="empty">과목이 없습니다.</p>'}</div>
   <button class="btn add" data-act="sedit">과목 추가</button>
   </div><div>
+  ${designCard()}
   <h2>동기화 · GitHub Gist</h2><div class="card">${cfg.token ? `
     <div class="kv"><span>상태</span><span id="syncmsg">${esc(syncMsg || '연결됨')}</span></div>
     <div class="kv"><span>Gist</span><span>${cfg.gist ? cfg.gist.slice(0, 10) + '…' : '-'}</span></div>
@@ -437,9 +576,58 @@ function subjDlg(s) {
     <div class="dbtns">${n ? '' : `<button class="btn danger" data-act="sdelsub" data-id="${s.id}">삭제</button>`}<span></span><button class="btn" data-act="dclose">취소</button><button class="btn pri" data-act="ssave" data-id="${n ? '' : s.id}">저장</button></div>`);
 }
 
+/* ========== prefs ========== */
+const P = () => ({ ...DEF_P, ...(S.prefs || {}) });
+const mq = matchMedia('(prefers-color-scheme: dark)');
+function applyPrefs() {
+  const p = P(), R = document.documentElement, st = R.style, f = FONTS[p.font] || FONTS.pretendard;
+  st.setProperty('--u-life', p.life); st.setProperty('--u-study', p.study); st.setProperty('--u-accent', p.accent);
+  st.setProperty('--u-heat', `var(--u-${p.heat})`);
+  st.setProperty('--fs', p.size + 'px'); st.setProperty('--fw', p.weight);
+  st.setProperty('--ff', f[1] + ',-apple-system,BlinkMacSystemFont,system-ui,sans-serif');
+  if (f[2] && !document.getElementById('gf-' + p.font)) {
+    const l = document.createElement('link');
+    l.id = 'gf-' + p.font; l.rel = 'stylesheet'; l.href = `https://fonts.googleapis.com/css2?family=${f[2]}&display=swap`;
+    document.head.appendChild(l);
+  }
+  R.dataset.theme = p.mode === 'dark' || (p.mode === 'auto' && mq.matches) ? 'dark' : 'light';
+  $('#tc').content = getComputedStyle(R).getPropertyValue('--bg').trim();
+}
+mq.addEventListener?.('change', applyPrefs);
+function setPref(o, live) {
+  S.prefs = { ...P(), ...o, u: now() };
+  applyPrefs();
+  if (live) ls(KEY, S); else commit();
+}
+
+/* ========== tooltip ========== */
+let tipT;
+function showTip(el) {
+  const tip = $('#tip');
+  tip.textContent = el.dataset.tip; tip.classList.add('on');
+  $$('.on-tip').forEach(e => e.classList.remove('on-tip')); el.classList.add('on-tip');
+  const r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+  const x = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+  const y = r.top - h - 8 < 8 ? r.bottom + 8 : r.top - h - 8;
+  tip.style.transform = `translate(${x}px,${y}px)`;
+}
+function hideTip() { $('#tip')?.classList.remove('on'); $$('.on-tip').forEach(e => e.classList.remove('on-tip')); }
+document.addEventListener('pointerover', e => {
+  if (e.pointerType === 'touch') return;
+  const el = e.target.closest?.('[data-tip]'); el ? showTip(el) : hideTip();
+});
+document.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'touch') return;
+  const el = e.target.closest?.('[data-tip]');
+  clearTimeout(tipT);
+  if (el) { showTip(el); tipT = setTimeout(hideTip, 2500); } else hideTip();
+});
+addEventListener('scroll', hideTip, { passive: true });
+
 /* ========== render ========== */
 function render() {
   memo = null;
+  applyPrefs(); hideTip();
   if (today() !== lastToday) { if (cur === lastToday) cur = today(); lastToday = today(); }
   $$('nav a').forEach(a => a.classList.toggle('on', a.dataset.v === view));
   $('#main').innerHTML = ({ today: vToday, timer: vTimer, stats: vStats, set: vSet }[view] || vToday)();
@@ -473,7 +661,8 @@ document.addEventListener('click', e => {
     case 'mon': { const d = pd(ym + '-01'); d.setMonth(d.getMonth() + +b.dataset.n); ym = ds(d).slice(0, 7); render(); break; }
     case 'seg': {
       const p = b.parentElement;
-      if (p.dataset.f === 'mode') {
+      if (p.dataset.f.startsWith('pref:')) { const k = p.dataset.f.slice(5); setPref({ [k]: k === 'weight' ? +b.dataset.v : b.dataset.v }); break; }
+      if (p.dataset.f === 'tmode') {
         if (tActive()) return toast('타이머를 먼저 종료하세요');
         T.mode = b.dataset.v; resetT(); render(); break;
       }
@@ -538,6 +727,8 @@ document.addEventListener('click', e => {
     }
     case 'untok': if (confirm('동기화를 해제할까요? 이 기기의 데이터는 유지됩니다.')) { cfg = {}; syncMsg = ''; ls(CFG, cfg); render(); } break;
     case 'sync': sync(); break;
+    case 'theme': { const th = THEMES[+b.dataset.i]; setPref({ life: th[1], study: th[2], accent: th[3] }); break; }
+    case 'preset-reset': if (confirm('디자인 설정을 기본값으로 되돌릴까요?')) { S.prefs = { ...DEF_P, u: now() }; commit(); } break;
     case 'export': exportData(); break;
     case 'import': $('#file').click(); break;
     case 'report': openReport(view === 'stats' ? ym : today().slice(0, 7)); break;
@@ -545,7 +736,10 @@ document.addEventListener('click', e => {
     case 'pprint': window.print(); break;
   }
 });
+const prefVal = t => t.dataset.pref === 'size' ? +t.value : t.value;
 document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.pref) { setPref({ [t.dataset.pref]: prefVal(t) }, true); if (t.dataset.pref === 'size') $('#fsv').textContent = t.value + 'px'; return; }
   if (e.target.id === 'note') {
     const L = S.logs[cur] || (S.logs[cur] = { v: {}, n: ['', 0] });
     L.n = [e.target.value, now()]; commit(true);
@@ -553,6 +747,7 @@ document.addEventListener('input', e => {
 });
 document.addEventListener('change', e => {
   const t = e.target;
+  if (t.dataset.pref) { setPref({ [t.dataset.pref]: prefVal(t) }); return; }
   if (t.id === 'pf' || t.id === 'pb') {
     if (tActive()) { toast('타이머를 먼저 종료하세요'); render(); return; }
     T[t.id === 'pf' ? 'focus' : 'brk'] = Math.max(1, Math.min(180, Math.round(+t.value || 1))); saveT(); render();

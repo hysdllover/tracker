@@ -7,8 +7,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="트래커">
-<meta name="theme-color" content="#FAFAF8" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1B1B1D" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" id="tc" content="#FAFAF8">
+<script>try{var p=(JSON.parse(localStorage.getItem('ht.data'))||{}).prefs||{},m=p.mode||'auto';document.documentElement.dataset.theme=m==='auto'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):m}catch(e){}</script>
 <title>습관 트래커</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -28,6 +28,7 @@
 <dialog id="dlg" class="sheet"></dialog>
 <div id="print"></div>
 <div id="toast"></div>
+<div id="tip"></div>
 <script src="app.js"></script>
 </body>
 </html>
