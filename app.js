@@ -7,7 +7,7 @@ const FILE = 'habit-tracker.json', DESC = 'habit-tracker-sync';
 const WD = '일월화수목금토';
 const PAL = ['#B5C7DE', '#D4C5E2', '#B8D4C2', '#EBCFB8', '#E6C3C8', '#C3D8D6', '#E2DCB5', '#C9C4BD'];
 const THEMES = [
-  ['블루그레이', '#8FA0AE', '#B5A88C', '#BAC2C9'], ['슬레이트 세이지', '#97A596', '#8E9AAB', '#C3C8BE'],
+  ['블루그레이', '#8FA0AE', '#5F6F80', '#BAC2C9'], ['슬레이트 세이지', '#97A596', '#8E9AAB', '#C3C8BE'],
   ['더스티 로즈', '#B49C98', '#8E9DAC', '#CDC0BC'], ['머스타드', '#B7A87F', '#8697A6', '#CFC8B4'],
   ['네이비', '#6F8094', '#A7967E', '#B5BDC7'], ['그레이', '#9A9C9E', '#B4AFA6', '#C9C9C6'],
 ];
@@ -20,7 +20,7 @@ const FONTS = {
   gowun: ['고운돋움', '"Gowun Dodum"', 'Gowun+Dodum'],
   custom: ['내 폰트', '"HTCustom"'],
 };
-const DEF_P = { font: 'pretendard', size: 13, weight: 300, mode: 'auto', life: '#8FA0AE', study: '#B5A88C', accent: '#BAC2C9', heat: 'life' };
+const DEF_P = { font: 'pretendard', size: 13, weight: 300, mode: 'auto', life: '#8FA0AE', study: '#5F6F80', accent: '#BAC2C9', heat: 'life' };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => Date.now();
 const pad = n => String(n).padStart(2, '0');
@@ -66,6 +66,8 @@ function seed() {
   };
 }
 let S = ls(KEY) || seed();
+// 이전 기본 샌드색 → 슬레이트로 이전
+if (S.prefs?.study === '#B5A88C') { S.prefs.study = '#5F6F80'; S.prefs.u = Date.now(); }
 let cfg = ls(CFG) || {};
 let memo = null;
 

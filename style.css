@@ -1,6 +1,6 @@
 /* ===== tokens ===== */
 :root{
-  --u-life:#8FA0AE;--u-study:#B5A88C;--u-accent:#BAC2C9;--u-heat:var(--u-life);
+  --u-life:#8FA0AE;--u-study:#5F6F80;--u-accent:#BAC2C9;--u-heat:var(--u-life);
   --fs:13px;--fw:300;--ff:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
   --bg:#F2F1ED;--card:#FAF9F6;--line:#DEDDD7;--faint:#E9E8E3;--text:#3F4853;--sub:#8A9099;--h0:#E5E4DF;--warn-ink:#9A6B5E;
   --life:var(--u-life);--study:var(--u-study);--accent:var(--u-accent);--heat:var(--u-heat);
