@@ -7,8 +7,9 @@ const FILE = 'habit-tracker.json', DESC = 'habit-tracker-sync';
 const WD = '일월화수목금토';
 const PAL = ['#B5C7DE', '#D4C5E2', '#B8D4C2', '#EBCFB8', '#E6C3C8', '#C3D8D6', '#E2DCB5', '#C9C4BD'];
 const THEMES = [
-  ['세이지', '#B8D4C2', '#B5C7DE', '#D4C5E2'], ['라벤더', '#CFC6E3', '#B9C9E4', '#E6CFDA'], ['샌드', '#DCCFB8', '#BFCBD3', '#E5C9BC'],
-  ['로즈', '#E6C3C8', '#C3CCE0', '#E9D5C0'], ['민트', '#BFDDD6', '#C6D3E8', '#D9E6C4'], ['모노', '#CFCFCB', '#B9BCC2', '#DADAD5'],
+  ['블루그레이', '#8FA0AE', '#B5A88C', '#BAC2C9'], ['슬레이트 세이지', '#97A596', '#8E9AAB', '#C3C8BE'],
+  ['더스티 로즈', '#B49C98', '#8E9DAC', '#CDC0BC'], ['머스타드', '#B7A87F', '#8697A6', '#CFC8B4'],
+  ['네이비', '#6F8094', '#A7967E', '#B5BDC7'], ['그레이', '#9A9C9E', '#B4AFA6', '#C9C9C6'],
 ];
 const FONTS = {
   pretendard: ['Pretendard', '"Pretendard Variable",Pretendard'],
@@ -18,7 +19,7 @@ const FONTS = {
   serif: ['Noto Serif KR', '"Noto Serif KR"', 'Noto+Serif+KR:wght@200..900'],
   gowun: ['고운돋움', '"Gowun Dodum"', 'Gowun+Dodum'],
 };
-const DEF_P = { font: 'pretendard', size: 13, weight: 300, mode: 'auto', life: '#B8D4C2', study: '#B5C7DE', accent: '#D4C5E2', heat: 'life' };
+const DEF_P = { font: 'pretendard', size: 13, weight: 300, mode: 'auto', life: '#8FA0AE', study: '#B5A88C', accent: '#BAC2C9', heat: 'life' };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => Date.now();
 const pad = n => String(n).padStart(2, '0');
@@ -57,12 +58,9 @@ function seed() {
     habits: [
       H('기상', 'life', 'check', 1, 1), H('운동', 'life', 'check', 1, 2),
       H('물 마시기', 'life', 'count', 8, 3), H('독서', 'life', 'time', 20, 4),
-      H('공부', 'study', 'time', 120, 5, { link: 'all' }),
+      H('공부', 'study', 'time', 120, 5), H('복습', 'study', 'check', 1, 6),
     ],
-    subjects: [
-      { id: uid(), name: '영어', color: PAL[0], o: 1, u },
-      { id: uid(), name: '수학', color: PAL[1], o: 2, u },
-    ],
+    subjects: [],
     sessions: [], logs: {}, u,
   };
 }
@@ -73,18 +71,7 @@ let memo = null;
 const habits = () => S.habits.filter(h => !h.del).sort((a, b) => a.o - b.o);
 const subjects = () => S.subjects.filter(s => !s.del).sort((a, b) => a.o - b.o);
 const subj = id => S.subjects.find(s => s.id === id);
-function studyMap() {
-  if (memo) return memo;
-  memo = {};
-  for (const s of S.sessions) {
-    if (s.del) continue;
-    const m = memo[s.d] || (memo[s.d] = { all: 0 });
-    m.all += s.min; m[s.sid] = (m[s.sid] || 0) + s.min;
-  }
-  return memo;
-}
 function val(h, d) {
-  if (h.type === 'time' && h.link) return studyMap()[d]?.[h.link] || 0;
   return S.logs[d]?.v?.[h.id]?.[0] || 0;
 }
 const goal = h => h.type === 'check' ? 1 : h.target;
@@ -185,84 +172,21 @@ async function sync() {
   syncing = false;
 }
 
-/* ========== timer ========== */
-let T = ls(TMR) || {};
-T = { mode: 'sw', sid: null, acc: 0, start: null, phase: 'focus', focus: 25, brk: 5, ...T };
-const saveT = () => ls(TMR, T);
-const elapsed = () => T.acc + (T.start ? now() - T.start : 0);
-const tActive = () => !!(T.start || T.acc);
-let actx;
-function unlockAudio() { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {} }
-function beep() {
-  if (!actx) return;
-  try {
-    [0, .35].forEach(t => {
-      const o = actx.createOscillator(), g = actx.createGain();
-      o.frequency.value = 880; o.connect(g); g.connect(actx.destination);
-      g.gain.setValueAtTime(.0001, actx.currentTime + t);
-      g.gain.exponentialRampToValueAtTime(.2, actx.currentTime + t + .02);
-      g.gain.exponentialRampToValueAtTime(.0001, actx.currentTime + t + .3);
-      o.start(actx.currentTime + t); o.stop(actx.currentTime + t + .32);
-    });
-  } catch (e) {}
-}
-function addSession(min) {
-  const s = subj(T.sid);
-  S.sessions.push({ id: uid(), sid: T.sid, d: today(), h: new Date(now() - min * 60000).getHours(), min, u: now() });
-  commit();
-  toast(`${s ? s.name : '공부'} ${fmtMin(min)} 기록`);
-}
-function resetT() { T.acc = 0; T.start = null; T.phase = 'focus'; saveT(); }
-const clk = ms => {
-  const s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
-  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${pad(m)}:${pad(s % 60)}`;
-};
-function tick() {
-  if (T.mode === 'pomo' && tActive()) {
-    const lim = (T.phase === 'focus' ? T.focus : T.brk) * 60000;
-    if (elapsed() >= lim) {
-      if (T.phase === 'focus') { T.phase = 'brk'; T.acc = 0; T.start = now(); saveT(); beep(); addSession(T.focus); }
-      else { resetT(); beep(); toast('휴식 끝 · 다음 집중을 시작하세요'); render(); }
-      return;
-    }
-  }
-  const c = $('#clock'); if (!c) return;
-  const e = elapsed();
-  if (T.mode === 'pomo') {
-    const lim = (T.phase === 'focus' ? T.focus : T.brk) * 60000;
-    c.textContent = clk(lim - e);
-    $('#phase').textContent = T.phase === 'focus' ? '집중' : '휴식';
-    const p = $('#prog'); if (p) p.style.strokeDashoffset = 691.15 * (1 - Math.min(1, e / lim));
-  } else {
-    c.textContent = clk(e);
-    $('#phase').textContent = tActive() ? (T.start ? '기록 중' : '일시정지') : '';
-  }
-  $('#tstart').textContent = T.start ? '일시정지' : tActive() ? '계속' : '시작';
-}
-setInterval(tick, 1000);
-
 /* ========== views ========== */
 let view = location.hash.slice(1) || 'today';
 let cur = today(), lastToday = today();
 let ym = today().slice(0, 7);
 
-function ring(r, label) {
-  const C = 150.8;
-  return `<div class="ring"><svg viewBox="0 0 58 58"><circle cx="29" cy="29" r="24" style="stroke:var(--line)" stroke-width="2.4"/>
-    <circle cx="29" cy="29" r="24" style="stroke:var(--life-ink)" stroke-width="2.4" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - r)}" opacity=".7"/></svg><span>${label}</span></div>`;
-}
 function row(h, d) {
   const v = val(h, d), t = goal(h), ok = v >= t, st = streak(h);
   const unit = h.type === 'time' ? '분' : h.type === 'count' ? '회' : '';
   const meta = [];
   if (h.type !== 'check') meta.push(`목표 ${t}${unit}`);
-  if (h.link) meta.push('타이머 연동');
   if (h.days.length < 7) meta.push([1, 2, 3, 4, 5, 6, 0].filter(i => h.days.includes(i)).map(i => WD[i]).join(''));
   if (st) meta.push(`${st}일 연속`);
   const w7 = [...Array(7)].map((_, i) => addD(d, i - 6)).map(x => `<i class="${!sched(h, x) ? 'n' : done(h, x) ? 'y' : val(h, x) > 0 ? 'p' : ''}"></i>`).join('');
   let ctl;
   if (h.type === 'check') ctl = `<button class="chk ${ok ? 'on' : ''}" data-act="tog" data-id="${h.id}" aria-label="완료">${I.check}</button>`;
-  else if (h.link) ctl = `<span class="val">${Math.round(v)}<small>/${t}${unit}</small></span>`;
   else ctl = `<div class="step"><button class="ib" data-act="inc" data-id="${h.id}" data-n="-1">${I.minus}</button><span class="val">${v}<small>/${t}${unit}</small></span><button class="ib" data-act="inc" data-id="${h.id}" data-n="1">${I.plus}</button></div>`;
   return `<div class="hrow ${h.cat} ${ok ? 'ok' : ''}"><div class="hinfo"><div class="hname">${esc(h.name)}</div><div class="hmeta"><span class="wd7">${w7}</span><span>${meta.join(' · ') || '매일'}</span></div></div>${ctl}${h.type !== 'check' ? `<i class="pbar" style="width:${Math.min(1, v / t) * 100}%"></i>` : ''}</div>`;
 }
@@ -272,18 +196,21 @@ const niceMin = m => m <= 60 ? 60 : m <= 120 ? Math.ceil(m / 30) * 30 : Math.cei
 const pct = r => Math.round(r * 100) + '%';
 function rateOf(d) { const hs = habits().filter(h => sched(h, d)); return hs.length ? [hs.filter(h => done(h, d)).length, hs.length] : null; }
 
-/* 과목별 누적 막대 */
-function studyBars(D, lab) {
-  const sm = studyMap(), tot = D.map(d => sm[d]?.all || 0), mx = niceMin(Math.max(...tot));
-  const used = S.subjects.filter(s => D.some(d => sm[d]?.[s.id])).sort((a, b) => a.o - b.o);
+/* 일별 달성 개수 (일상/공부 누적, 회색 = 미달성) */
+function catBars(D, lab) {
+  const t = today(), C = ['life', 'study'];
+  const data = D.map(d => {
+    const hs = d <= t ? habits().filter(h => sched(h, d)) : [], o = { n: hs.length };
+    C.forEach(c => o[c] = hs.filter(h => h.cat === c && done(h, d)).length); return o;
+  });
+  const mx = Math.max(1, ...data.map(o => o.n));
   const bars = D.map((d, i) => {
-    const m = tot[i], parts = used.filter(s => sm[d]?.[s.id]);
-    const tip = `${tipDate(d)} · ${m ? fmtMin(m) : '기록 없음'}${parts.length > 1 ? '\n' + parts.map(s => `${s.name} ${fmtMin(sm[d][s.id])}`).join(' · ') : ''}`;
-    return `<div data-tip="${esc(tip)}"><div class="st" style="height:${m / mx * 100}%">${parts.map(s => `<i style="--c:${s.color};flex:${sm[d][s.id]} 1 0"></i>`).join('')}</div></div>`;
+    const o = data[i], s = o.life + o.study;
+    return `<div data-tip="${tipDate(d)} · ${o.n ? `${s}/${o.n} 달성\n일상 ${o.life} · 공부 ${o.study}` : '-'}"><div class="st" style="height:${o.n / mx * 100}%">${C.filter(c => o[c]).map(c => `<i class="${c}" style="flex:${o[c]} 1 0"></i>`).join('')}${o.n - s ? `<i style="flex:${o.n - s} 1 0;--c:var(--h0)"></i>` : ''}</div></div>`;
   }).join('');
-  return `<div class="plot"><div class="gl" style="top:0"><span>${short(mx)}</span></div><div class="gl" style="top:50%"><span>${short(mx / 2)}</span></div><div class="gl base" style="top:100%"></div><div class="bars">${bars}</div></div>
+  return `<div class="plot"><div class="gl" style="top:0"><span>${mx}</span></div><div class="gl base" style="top:100%"></div><div class="bars">${bars}</div></div>
   <div class="xax">${D.map((d, i) => `<span>${lab(d, i)}</span>`).join('')}</div>
-  ${used.length > 1 ? `<div class="legend">${used.map(s => `<span><i style="--c:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div>` : ''}`;
+  <div class="legend"><span><i style="--c:var(--life)"></i>일상</span><span><i style="--c:var(--study)"></i>공부</span><span><i style="--c:var(--h0)"></i>미달성</span></div>`;
 }
 
 /* 일별 달성률 영역 그래프 */
@@ -302,17 +229,14 @@ function rateLine(D) {
   <div class="xax">${D.map((d, i) => `<span>${i % 7 === 0 ? +d.slice(8) : ''}</span>`).join('')}</div>`;
 }
 
-/* 과목 도넛 */
-function donut(list, tot) {
-  let acc = 0;
-  const g = list.length > 1 ? .8 : 0;
-  const segs = list.map(s => {
-    const p = s.m / tot * 100, w = Math.max(.01, p - g);
-    const c = `<circle cx="50" cy="50" r="42" pathLength="100" style="stroke:${s.color};stroke-width:9;fill:none" stroke-dasharray="${w} ${100 - w}" stroke-dashoffset="${-acc}" data-tip="${esc(s.name)} · ${fmtMin(s.m)} · ${Math.round(p)}%"/>`;
-    acc += p; return c;
-  }).join('');
-  return `<div class="donut"><div class="dc"><svg viewBox="0 0 100 100">${segs}</svg><span><div><b>${short(tot)}</b>합계</div></span></div>
-  <table class="tb">${list.map(s => `<tr><td><span class="dot" style="--c:${s.color};margin-right:.45rem"></span>${esc(s.name)}</td><td class="num">${fmtMin(s.m)}</td><td class="num sub">${Math.round(s.m / tot * 100)}%</td></tr>`).join('')}</table></div>`;
+/* 습관별 달성률 순위 */
+function habitRank(D) {
+  const t = today(), rows = habits().map(h => {
+    const sc = D.filter(d => d <= t && sched(h, d)), dn = sc.filter(d => done(h, d)).length;
+    return { h, r: sc.length ? dn / sc.length : null, dn, n: sc.length, st: streak(h) };
+  }).sort((a, b) => (b.r ?? -1) - (a.r ?? -1));
+  if (!rows.length) return '<p class="empty">습관이 없습니다.</p>';
+  return `<table class="tb"><thead><tr><th>습관</th><th class="bc wide">달성률</th><th class="num"></th><th class="num">연속</th></tr></thead><tbody>${rows.map(x => `<tr class="${x.h.cat}" data-tip="${esc(x.h.name)} · ${x.dn}/${x.n}일"><td>${esc(x.h.name)}</td><td class="bc wide"><div class="ibar"><i style="width:${(x.r || 0) * 100}%"></i></div></td><td class="num">${x.r == null ? '-' : pct(x.r)}</td><td class="num sub">${x.st}일</td></tr>`).join('')}</tbody></table>`;
 }
 
 /* 습관 × 날짜 매트릭스 */
@@ -356,25 +280,13 @@ function yearHeat() {
 
 /* 요일 패턴 (최근 8주) */
 function weekdayTable() {
-  const t = today(), D = [...Array(56)].map((_, i) => addD(t, i - 55)), sm = studyMap();
-  const rows = [1, 2, 3, 4, 5, 6, 0].map(w => {
-    const dd = D.filter(d => pd(d).getDay() === w), rs = dd.map(dayRate).filter(r => r != null);
-    return { w, ar: rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null, am: dd.reduce((a, d) => a + (sm[d]?.all || 0), 0) / dd.length };
-  });
-  const mm = Math.max(1, ...rows.map(r => r.am)), br = Math.max(...rows.map(r => r.ar || 0));
-  return `<table class="tb"><thead><tr><th>요일</th><th class="bc">달성률</th><th class="num"></th><th class="bc">평균 공부</th><th class="num"></th></tr></thead><tbody>${rows.map(r => `<tr><td${r.ar && r.ar === br ? ' style="font-weight:calc(var(--fw) + 200)"' : ''}>${WD[r.w]}</td><td class="bc"><div class="ibar" style="--c:var(--heat)"><i style="width:${(r.ar || 0) * 100}%"></i></div></td><td class="num">${r.ar == null ? '-' : pct(r.ar)}</td><td class="bc"><div class="ibar" style="--c:var(--study)"><i style="width:${r.am / mm * 100}%"></i></div></td><td class="num">${r.am ? short(r.am) : '-'}</td></tr>`).join('')}</tbody></table>`;
+  const t = today(), D = [...Array(56)].map((_, i) => addD(t, i - 55)), hs = habits();
+  const rate = (dd, cat) => { let n = 0, k = 0; dd.forEach(d => hs.forEach(h => { if ((!cat || h.cat === cat) && sched(h, d)) { n++; if (done(h, d)) k++; } })); return n ? k / n : null; };
+  const rows = [1, 2, 3, 4, 5, 6, 0].map(w => { const dd = D.filter(d => pd(d).getDay() === w); return { w, a: rate(dd), l: rate(dd, 'life'), s: rate(dd, 'study') }; });
+  const br = Math.max(...rows.map(r => r.a || 0)), f = r => r == null ? '-' : pct(r);
+  return `<table class="tb"><thead><tr><th>요일</th><th class="bc wide">전체</th><th class="num"></th><th class="num">일상</th><th class="num">공부</th></tr></thead><tbody>${rows.map(r => `<tr><td${r.a && r.a === br ? ' class="hi"' : ''}>${WD[r.w]}</td><td class="bc wide"><div class="ibar" style="--c:var(--heat)"><i style="width:${(r.a || 0) * 100}%"></i></div></td><td class="num">${f(r.a)}</td><td class="num sub">${f(r.l)}</td><td class="num sub">${f(r.s)}</td></tr>`).join('')}</tbody></table>`;
 }
 
-/* 시간대별 공부 */
-function hourStrip(D) {
-  const set = new Set(D), hrs = Array(24).fill(0);
-  for (const x of S.sessions) if (!x.del && set.has(x.d) && x.h != null) hrs[x.h] += x.min;
-  const mx = Math.max(...hrs);
-  if (!mx) return '<p class="empty">타이머 기록부터 시간대가 집계됩니다.</p>';
-  return `<div class="sub" style="margin-bottom:.7rem">가장 많이 공부한 시간대 <span style="color:var(--text)">${hrs.indexOf(mx)}시</span></div>
-  <div class="hours">${hrs.map((m, h) => `<i style="background:${m ? `color-mix(in srgb,var(--study-ink) ${Math.round(12 + m / mx * 88)}%,var(--h0))` : 'var(--h0)'}" data-tip="${h}시 · ${m ? fmtMin(m) : '없음'}"></i>`).join('')}</div>
-  <div class="hlab"><span>0시</span><span>6시</span><span>12시</span><span>18시</span></div>`;
-}
 function heat(m) {
   const [y, mo] = m.split('-').map(Number), n = new Date(y, mo, 0).getDate(), off = new Date(y, mo - 1, 1).getDay(), t = today();
   let h = [...WD].map(w => `<div class="wd">${w}</div>`).join('') + '<div></div>'.repeat(off);
@@ -394,32 +306,15 @@ function vToday() {
   const grp = c => { const l = hs.filter(h => h.cat === c); return l.length ? `<h2>${c === 'life' ? '일상' : '공부'}</h2><div class="card list">${l.map(h => row(h, d)).join('')}</div>` : ''; };
   return `<header class="top"><div><div class="sub">${rel}</div><h1>${dt.getMonth() + 1}월 ${dt.getDate()}일 ${WD[dt.getDay()]}요일</h1>
     <div class="datenav"><button class="btn" data-act="day" data-n="-1">이전</button>${diff ? '<button class="btn" data-act="day" data-n="0">오늘</button>' : ''}<button class="btn" data-act="day" data-n="1">다음</button></div></div>
-    ${ring(r, `${dn}/${hs.length}`)}</header>
+    <div class="score"><b>${pct(r)}</b><span class="sub">${dn}/${hs.length} 완료</span></div></header>
+  <div class="prog"><i style="width:${r * 100}%"></i></div>
   <div class="cols"><section>
     ${hs.length ? grp('life') + grp('study') : '<p class="empty">이 날 예정된 습관이 없습니다.</p>'}
     <h2>한 줄 회고</h2><textarea class="note" id="note" rows="2" placeholder="오늘 하루를 한 줄로">${esc(S.logs[d]?.n?.[0] || '')}</textarea>
   </section><aside>
-    <h2>최근 7일 공부</h2><div class="card">${studyBars([...Array(7)].map((_, i) => addD(d, i - 6)), x => WD[pd(x).getDay()])}</div>
+    <h2>최근 7일</h2><div class="card">${catBars([...Array(7)].map((_, i) => addD(d, i - 6)), x => WD[pd(x).getDay()])}</div>
     <h2>${+d.slice(5, 7)}월 달성</h2><div class="card">${heat(d.slice(0, 7))}</div>
   </aside></div>`;
-}
-
-function vTimer() {
-  const subs = subjects();
-  if (!subj(T.sid) || subj(T.sid).del) { T.sid = subs[0]?.id || null; saveT(); }
-  const t = today(), list = S.sessions.filter(s => !s.del && s.d === t).reverse();
-  const tot = list.reduce((a, s) => a + s.min, 0);
-  return `<header class="top"><h1>타이머</h1></header>
-  <div class="seg" data-f="tmode" style="margin-top:8px"><button data-act="seg" data-v="sw" class="${T.mode === 'sw' ? 'on' : ''}">스톱워치</button><button data-act="seg" data-v="pomo" class="${T.mode === 'pomo' ? 'on' : ''}">뽀모도로</button></div>
-  <div class="chips">${subs.map(s => `<button class="chip ${s.id === T.sid ? 'on' : ''}" data-act="sub" data-id="${s.id}" style="--c:${s.color}">${esc(s.name)}</button>`).join('') || '<span class="sub">설정에서 과목을 추가하세요.</span>'}</div>
-  <div class="card tm">
-    <div class="dial">${T.mode === 'pomo' ? `<svg viewBox="0 0 236 236"><circle cx="118" cy="118" r="110" style="stroke:var(--line)" stroke-width="2"/><circle id="prog" cx="118" cy="118" r="110" style="stroke:${T.phase === 'focus' ? 'var(--study-ink)' : 'var(--life-ink)'}" stroke-width="2" stroke-dasharray="691.15" stroke-dashoffset="691.15" opacity=".7"/></svg>` : ''}
-      <div><div class="clock" id="clock">00:00</div><div class="phase" id="phase"></div></div></div>
-    <div class="tbtns"><button class="btn pri" id="tstart" data-act="tstart">시작</button><button class="btn" data-act="tstop">${T.mode === 'pomo' && T.phase === 'brk' ? '휴식 건너뛰기' : '종료·저장'}</button></div>
-    ${T.mode === 'pomo' ? `<div class="pset">집중 <input type="number" inputmode="numeric" id="pf" value="${T.focus}" min="1"> 분 · 휴식 <input type="number" inputmode="numeric" id="pb" value="${T.brk}" min="1"> 분</div>` : ''}
-  </div>
-  <h2>오늘 기록 · ${fmtMin(tot)}</h2>
-  <div class="card list">${list.map(s => { const sb = subj(s.sid); return `<div class="srow"><span class="dot" style="--c:${sb?.color || 'var(--sub)'}"></span><span class="grow">${esc(sb && !sb.del ? sb.name : '삭제된 과목')}</span><span>${fmtMin(s.min)}</span><button class="ib" data-act="sdel" data-id="${s.id}" aria-label="삭제">${I.x}</button></div>`; }).join('') || '<p class="empty">아직 기록이 없습니다.</p>'}</div>`;
 }
 
 function monthDays(m) {
@@ -427,36 +322,31 @@ function monthDays(m) {
   return [...Array(new Date(y, mo, 0).getDate())].map((_, i) => `${m}-${pad(i + 1)}`);
 }
 function vStats() {
-  const D = monthDays(ym), t = today(), past = D.filter(d => d <= t), sm = studyMap(), [y, mo] = ym.split('-').map(Number);
+  const D = monthDays(ym), t = today(), past = D.filter(d => d <= t), [y, mo] = ym.split('-').map(Number);
   const avgOf = days => { const r = days.map(dayRate).filter(x => x != null); return r.length ? r.reduce((a, b) => a + b, 0) / r.length : null; };
   const pmD = pd(ym + '-01'); pmD.setMonth(pmD.getMonth() - 1);
   const avg = avgOf(past), pavg = avgOf(monthDays(ds(pmD).slice(0, 7)).filter(d => d <= t));
   const delta = avg != null && pavg != null ? Math.round((avg - pavg) * 100) : null;
   const perfect = past.filter(d => dayRate(d) === 1).length;
-  const tot = past.reduce((a, d) => a + (sm[d]?.all || 0), 0), studied = past.filter(d => sm[d]?.all).length;
+  const total = past.reduce((a, d) => a + habits().filter(h => sched(h, d) && done(h, d)).length, 0);
   const best = habits().map(h => [h, streak(h)]).sort((a, b) => b[1] - a[1])[0];
-  const subs = S.subjects.map(s => ({ ...s, m: past.reduce((a, d) => a + (sm[d]?.[s.id] || 0), 0) })).filter(s => s.m > 0).sort((a, b) => b.m - a.m);
   return `<header class="top"><h1>통계</h1><div class="mnav"><button class="ib" data-act="mon" data-n="-1">${I.l}</button><span>${y}. ${pad(mo)}</span><button class="ib" data-act="mon" data-n="1">${I.r}</button></div></header>
   <div class="tiles" style="margin-top:.6rem">
     <div class="tile"><span class="sub">평균 달성률</span><b>${avg == null ? '-' : pct(avg)}</b><small>${delta == null ? '지난달 기록 없음' : `지난달 대비 ${delta >= 0 ? '+' : ''}${delta}%p`}</small></div>
     <div class="tile"><span class="sub">완벽한 날</span><b>${perfect}일</b><small>${past.length}일 중</small></div>
-    <div class="tile"><span class="sub">공부 시간</span><b>${short(tot)}</b><small>공부한 날 평균 ${studied ? short(tot / studied) : '-'}</small></div>
+    <div class="tile"><span class="sub">총 달성</span><b>${total}회</b><small>하루 평균 ${past.length ? (total / past.length).toFixed(1) : 0}회</small></div>
     <div class="tile"><span class="sub">최고 연속</span><b>${best ? best[1] : 0}일</b><small>${best && best[1] ? esc(best[0].name) : '-'}</small></div>
   </div>
   <div class="grid2"><div>
     <h2>일별 달성률</h2><div class="card">${rateLine(D)}</div>
-    <h2>습관 매트릭스</h2><div class="card">${matrix(D)}</div>
+    <h2>일별 달성 개수</h2><div class="card">${catBars(D, (d, i) => i % 7 === 0 ? +d.slice(8) : '')}</div>
   </div><div>
-    <h2>일별 공부 시간</h2><div class="card">${studyBars(D, (d, i) => i % 7 === 0 ? +d.slice(8) : '')}</div>
-    <h2>과목 비율</h2><div class="card">${tot ? donut(subs, tot) : '<p class="empty">이 달의 공부 기록이 없습니다.</p>'}</div>
-  </div></div>
-  <h2>최근 1년</h2><div class="card">${yearHeat()}</div>
-  <div class="grid2"><div>
+    <h2>습관별 달성률 · ${mo}월</h2><div class="card">${habitRank(past)}</div>
     <h2>요일 패턴 · 최근 8주</h2><div class="card">${weekdayTable()}</div>
-  </div><div>
-    <h2>시간대별 공부 · ${mo}월</h2><div class="card">${hourStrip(past)}</div>
-    <button class="btn" style="width:100%;margin-top:1rem" data-act="report">A4 월간 리포트</button>
-  </div></div>`;
+  </div></div>
+  <h2>습관 매트릭스</h2><div class="card">${matrix(D)}</div>
+  <h2>최근 1년</h2><div class="card">${yearHeat()}</div>
+  <button class="btn" style="width:100%;margin-top:1.2rem" data-act="report">A4 월간 리포트</button>`;
 }
 
 function designCard() {
@@ -480,8 +370,6 @@ function vSet() {
   <h2>습관</h2><div class="card list">${habits().map((h, i, a) => `<div class="srow"><span class="dot" style="--c:var(--${h.cat})"></span><div class="grow"><div>${esc(h.name)}</div><div class="hmeta">${h.cat === 'life' ? '일상' : '공부'} · ${TY[h.type]}${h.type !== 'check' ? ' ' + h.target + (h.type === 'time' ? '분' : '회') : ''}${h.days.length < 7 ? ' · ' + [1, 2, 3, 4, 5, 6, 0].filter(x => h.days.includes(x)).map(x => WD[x]).join('') : ''}</div></div>
     ${i ? `<button class="ib" data-act="hup" data-id="${h.id}" aria-label="위로">${I.up}</button>` : ''}${i < a.length - 1 ? `<button class="ib" data-act="hdn" data-id="${h.id}" aria-label="아래로">${I.down}</button>` : ''}<button class="ib" data-act="hedit" data-id="${h.id}" aria-label="편집">${I.edit}</button></div>`).join('') || '<p class="empty">습관이 없습니다.</p>'}</div>
   <button class="btn add" data-act="hedit">습관 추가</button>
-  <h2>과목</h2><div class="card list">${subjects().map(s => `<div class="srow"><span class="dot" style="--c:${s.color}"></span><span class="grow">${esc(s.name)}</span><button class="ib" data-act="sedit" data-id="${s.id}" aria-label="편집">${I.edit}</button></div>`).join('') || '<p class="empty">과목이 없습니다.</p>'}</div>
-  <button class="btn add" data-act="sedit">과목 추가</button>
   </div><div>
   ${designCard()}
   <h2>동기화 · GitHub Gist</h2><div class="card">${cfg.token ? `
@@ -502,28 +390,27 @@ function vSet() {
 
 /* ========== report (A4) ========== */
 function report(m) {
-  const D = monthDays(m), t = today(), past = D.filter(d => d <= t), sm = studyMap(), hs = habits();
+  const D = monthDays(m), t = today(), past = D.filter(d => d <= t), hs = habits();
   const [y, mo] = m.split('-').map(Number);
   const rates = past.map(dayRate).filter(r => r != null);
   const avg = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 100) : 0;
-  const tot = past.reduce((a, d) => a + (sm[d]?.all || 0), 0);
-  const subs = S.subjects.map(s => ({ ...s, m: past.reduce((a, d) => a + (sm[d]?.[s.id] || 0), 0) })).filter(s => s.m > 0).sort((a, b) => b.m - a.m);
+  const total = past.reduce((a, d) => a + hs.filter(h => sched(h, d) && done(h, d)).length, 0);
   const notes = D.filter(d => S.logs[d]?.n?.[0]);
   const head = D.map((d, i) => { const w = pd(d).getDay(); return `<th class="${w === 0 ? 'sun' : ''}">${i + 1}<br>${WD[w]}</th>`; }).join('');
   const body = hs.map(h => {
     const sc = past.filter(d => sched(h, d)), dn = sc.filter(d => done(h, d)).length;
     return `<tr><td class="nm">${esc(h.name)}</td>${D.map(d => `<td>${!sched(h, d) ? '' : `<span class="c ${d <= t && done(h, d) ? h.cat : 's'}"></span>`}</td>`).join('')}<td class="rt">${sc.length ? Math.round(dn / sc.length * 100) + '%' : '-'}</td></tr>`;
   }).join('');
-  const mins = `<tr><td class="nm">공부(분)</td>${D.map(d => `<td class="mn">${sm[d]?.all ? Math.round(sm[d].all) : ''}</td>`).join('')}<td class="rt">${short(tot)}</td></tr>`;
-  const mx = Math.max(1, ...subs.map(s => s.m));
+  const rrow = `<tr><td class="nm">달성률</td>${D.map(d => { const r = d <= t ? dayRate(d) : null; return `<td class="mn">${r == null ? '' : Math.round(r * 100)}</td>`; }).join('')}<td class="rt">${avg}%</td></tr>`;
+  const hr = hs.map(h => { const sc = past.filter(d => sched(h, d)), dn = sc.filter(d => done(h, d)).length; return { h, r: sc.length ? dn / sc.length : 0, dn, n: sc.length }; }).sort((a, b) => b.r - a.r);
   return `<div class="page rp">
     <div class="rp-h"><h1>${y}년 ${mo}월 습관 리포트</h1><span>${t} 출력</span></div>
-    <div class="rp-t"><div>평균 달성률<b>${avg}%</b></div><div>완벽한 날<b>${rates.filter(r => r === 1).length}일</b></div><div>공부 시간<b>${fmtMin(tot)}</b></div><div>기록한 날<b>${rates.length}일</b></div></div>
+    <div class="rp-t"><div>평균 달성률<b>${avg}%</b></div><div>완벽한 날<b>${rates.filter(r => r === 1).length}일</b></div><div>총 달성<b>${total}회</b></div><div>기록한 날<b>${rates.length}일</b></div></div>
     <h4>습관 달성표</h4>
     <table class="hg"><colgroup><col style="width:26mm">${D.map(() => '<col>').join('')}<col style="width:10mm"></colgroup>
-      <thead><tr><th class="nm"></th>${head}<th>달성</th></tr></thead><tbody>${body}${mins}</tbody></table>
-    <h4>과목별 공부 시간</h4>
-    <div class="rp-s">${subs.map(s => `<div class="r"><span>${esc(s.name)}</span><i style="width:${s.m / mx * 45}mm;background:${s.color}"></i><em>${fmtMin(s.m)} · ${Math.round(s.m / tot * 100)}%</em></div>`).join('') || '<div style="color:#999">기록 없음</div>'}</div>
+      <thead><tr><th class="nm"></th>${head}<th>달성</th></tr></thead><tbody>${body}${rrow}</tbody></table>
+    <h4>습관별 달성률</h4>
+    <div class="rp-s">${hr.map(x => `<div class="r"><span>${esc(x.h.name)}</span><i style="width:${x.r * 40}mm;background:var(--u-${x.h.cat})"></i><em>${x.dn}/${x.n}일 · ${Math.round(x.r * 100)}%</em></div>`).join('') || '<div style="color:#999">기록 없음</div>'}</div>
     <h4>한 줄 회고</h4>
     <div class="rp-n">${notes.map(d => `<p><b>${+d.slice(8)}일</b>${esc(S.logs[d].n[0])}</p>`).join('') || '<p style="color:#999">기록 없음</p>'}</div>
   </div>`;
@@ -555,27 +442,15 @@ function habitDlg(h) {
     <div class="fld"><span>분류</span>${seg('cat', [['life', '일상'], ['study', '공부']], h.cat)}</div>
     <div class="fld"><span>기록 방식</span>${seg('type', [['check', '완료'], ['count', '횟수'], ['time', '시간']], h.type)}</div>
     <div class="fld" id="f-tg"><span>하루 목표</span><div class="inl"><input id="f-target" type="number" inputmode="numeric" min="1" value="${h.type === 'check' ? '' : h.target}" placeholder="${h.type === 'time' ? 30 : 1}"><span id="f-unit"></span></div></div>
-    <div class="fld" id="f-lk"><span>타이머 연동</span><select id="f-link"><option value="">없음 (직접 입력)</option><option value="all">전체 공부 시간</option>${subjects().map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div>
     <div class="fld"><span>요일</span><div class="days">${[1, 2, 3, 4, 5, 6, 0].map(i => `<button type="button" data-act="dtog" data-d="${i}" class="${h.days.includes(i) ? 'on' : ''}">${WD[i]}</button>`).join('')}</div></div>
     <div class="dbtns">${n ? '' : `<button class="btn danger" data-act="hdel" data-id="${h.id}">삭제</button>`}<span></span><button class="btn" data-act="dclose">취소</button><button class="btn pri" data-act="hsave" data-id="${n ? '' : h.id}">저장</button></div>`);
-  $('#f-link').value = h.link || '';
   updForm();
 }
 function updForm() {
   const ty = segVal('type');
   $('#f-tg').hidden = ty === 'check';
-  $('#f-lk').hidden = ty !== 'time';
   $('#f-unit').textContent = ty === 'time' ? '분' : '회';
 }
-function subjDlg(s) {
-  const n = !s;
-  s = s || { name: '', color: PAL[subjects().length % PAL.length] };
-  openDlg(`<h3>${n ? '과목 추가' : '과목 편집'}</h3>
-    <div class="fld"><span>이름</span><input id="f-name" value="${esc(s.name)}" maxlength="20" placeholder="예: 국어"></div>
-    <div class="fld"><span>색상</span><div class="sw" data-f="color">${PAL.map(c => `<button type="button" data-act="seg" data-v="${c}" class="${c === s.color ? 'on' : ''}" style="--c:${c}" aria-label="${c}"></button>`).join('')}</div></div>
-    <div class="dbtns">${n ? '' : `<button class="btn danger" data-act="sdelsub" data-id="${s.id}">삭제</button>`}<span></span><button class="btn" data-act="dclose">취소</button><button class="btn pri" data-act="ssave" data-id="${n ? '' : s.id}">저장</button></div>`);
-}
-
 /* ========== prefs ========== */
 const P = () => ({ ...DEF_P, ...(S.prefs || {}) });
 const mq = matchMedia('(prefers-color-scheme: dark)');
@@ -630,8 +505,7 @@ function render() {
   applyPrefs(); hideTip();
   if (today() !== lastToday) { if (cur === lastToday) cur = today(); lastToday = today(); }
   $$('nav a').forEach(a => a.classList.toggle('on', a.dataset.v === view));
-  $('#main').innerHTML = ({ today: vToday, timer: vTimer, stats: vStats, set: vSet }[view] || vToday)();
-  if (view === 'timer') tick();
+  $('#main').innerHTML = ({ today: vToday, stats: vStats, set: vSet }[view] || vToday)();
 }
 function softRender() {
   const a = document.activeElement;
@@ -662,31 +536,8 @@ document.addEventListener('click', e => {
     case 'seg': {
       const p = b.parentElement;
       if (p.dataset.f.startsWith('pref:')) { const k = p.dataset.f.slice(5); setPref({ [k]: k === 'weight' ? +b.dataset.v : b.dataset.v }); break; }
-      if (p.dataset.f === 'tmode') {
-        if (tActive()) return toast('타이머를 먼저 종료하세요');
-        T.mode = b.dataset.v; resetT(); render(); break;
-      }
       $$('button', p).forEach(x => x.classList.toggle('on', x === b));
       if (p.dataset.f === 'type') updForm();
-      break;
-    }
-    case 'sub': if (tActive()) return toast('타이머를 먼저 종료하세요'); T.sid = id; saveT(); render(); break;
-    case 'tstart':
-      if (!T.sid) return toast('과목을 먼저 추가하세요');
-      unlockAudio();
-      if (T.start) { T.acc += now() - T.start; T.start = null; } else T.start = now();
-      saveT(); tick(); break;
-    case 'tstop': {
-      if (T.mode === 'pomo' && T.phase === 'brk') { resetT(); render(); break; }
-      const m = Math.floor(elapsed() / 60000);
-      if (tActive() && m < 1) toast('1분 미만은 저장되지 않습니다');
-      resetT();
-      if (m >= 1) addSession(m); else render();
-      break;
-    }
-    case 'sdel': {
-      const s = S.sessions.find(x => x.id === id);
-      if (s && confirm(`${fmtMin(s.min)} 기록을 삭제할까요?`)) { s.del = true; s.u = now(); commit(); }
       break;
     }
     case 'hedit': habitDlg(h); break;
@@ -698,7 +549,7 @@ document.addEventListener('click', e => {
       const target = type === 'check' ? 1 : Math.max(1, Math.round(+$('#f-target').value || (type === 'time' ? 30 : 1)));
       if (!name) return toast('이름을 입력하세요');
       if (!days.length) return toast('요일을 하나 이상 고르세요');
-      const o = { name, cat: segVal('cat'), type, target, days, link: type === 'time' ? $('#f-link').value : '', u: now() };
+      const o = { name, cat: segVal('cat'), type, target, days, link: '', u: now() };
       if (h) Object.assign(h, o);
       else S.habits.push({ id: uid(), c: today(), o: Math.max(0, ...S.habits.map(x => x.o)) + 1, ...o });
       dlg.close(); commit(); break;
@@ -707,18 +558,6 @@ document.addEventListener('click', e => {
     case 'hup': case 'hdn': {
       const l = habits(), i = l.indexOf(h), j = a === 'hup' ? i - 1 : i + 1;
       if (l[j]) { [h.o, l[j].o] = [l[j].o, h.o]; h.u = l[j].u = now(); commit(); }
-      break;
-    }
-    case 'sedit': subjDlg(S.subjects.find(x => x.id === id)); break;
-    case 'ssave': {
-      const name = $('#f-name').value.trim(); if (!name) return toast('이름을 입력하세요');
-      const s = S.subjects.find(x => x.id === id), o = { name, color: segVal('color'), u: now() };
-      if (s) Object.assign(s, o); else S.subjects.push({ id: uid(), o: Math.max(0, ...S.subjects.map(x => x.o)) + 1, ...o });
-      dlg.close(); commit(); break;
-    }
-    case 'sdelsub': {
-      const s = S.subjects.find(x => x.id === id);
-      if (confirm(`'${s.name}' 과목을 삭제할까요? 기존 기록은 남습니다.`)) { s.del = true; s.u = now(); dlg.close(); commit(); }
       break;
     }
     case 'tok': {
@@ -748,10 +587,6 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.pref) { setPref({ [t.dataset.pref]: prefVal(t) }); return; }
-  if (t.id === 'pf' || t.id === 'pb') {
-    if (tActive()) { toast('타이머를 먼저 종료하세요'); render(); return; }
-    T[t.id === 'pf' ? 'focus' : 'brk'] = Math.max(1, Math.min(180, Math.round(+t.value || 1))); saveT(); render();
-  }
   if (t.id === 'file' && t.files[0]) {
     t.files[0].text().then(txt => {
       const d = JSON.parse(txt);
