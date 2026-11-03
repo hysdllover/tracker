@@ -18,6 +18,7 @@ const FONTS = {
   plex: ['IBM Plex Sans KR', '"IBM Plex Sans KR"', 'IBM+Plex+Sans+KR:wght@100;200;300;400;500'],
   serif: ['Noto Serif KR', '"Noto Serif KR"', 'Noto+Serif+KR:wght@200..900'],
   gowun: ['고운돋움', '"Gowun Dodum"', 'Gowun+Dodum'],
+  custom: ['내 폰트', '"HTCustom"'],
 };
 const DEF_P = { font: 'pretendard', size: 13, weight: 300, mode: 'auto', life: '#8FA0AE', study: '#B5A88C', accent: '#BAC2C9', heat: 'life' };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -356,7 +357,9 @@ function designCard() {
     <div class="fld"><span>색상 테마</span><div class="pre">${THEMES.map((t, i) => `<button data-act="theme" data-i="${i}" class="${p.life === t[1] && p.study === t[2] && p.accent === t[3] ? 'on' : ''}"><span class="tri">${t.slice(1).map(c => `<i style="--c:${c}"></i>`).join('')}</span>${t[0]}</button>`).join('')}</div></div>
     <div class="fld"><span>직접 고르기</span><div class="crow">${[['life', '일상'], ['study', '공부'], ['accent', '강조']].map(([k, l]) => `<label class="cp"><input type="color" data-pref="${k}" value="${p[k]}">${l}</label>`).join('')}</div></div>
     <div class="fld"><span>잔디·달성 색</span>${seg('pref:heat', [['life', '일상'], ['study', '공부'], ['accent', '강조']], p.heat)}</div>
-    <div class="fld"><span>글꼴</span><select data-pref="font">${Object.entries(FONTS).map(([k, f]) => `<option value="${k}"${k === p.font ? ' selected' : ''}>${f[0]}</option>`).join('')}</select></div>
+    <div class="fld"><span>글꼴</span><select data-pref="font">${Object.entries(FONTS).map(([k, f]) => `<option value="${k}"${k === p.font ? ' selected' : ''}>${k === 'custom' && customMeta ? '내 폰트 · ' + esc(customMeta.name) : f[0]}</option>`).join('')}</select></div>
+    <div class="fld"><span>내 폰트 파일</span><div class="inl"><span class="grow sub">${customMeta ? `${esc(customMeta.name)} · ${(customMeta.size / 1048576).toFixed(1)}MB` : p.font === 'custom' ? '이 기기에 폰트 파일이 없습니다' : 'TTF · OTF · WOFF'}</span><button class="btn" data-act="fontpick">파일 선택</button>${customMeta ? '<button class="btn danger" data-act="fontdel">삭제</button>' : ''}</div>
+      <small style="display:block;margin-top:.35rem">파일은 이 기기에만 저장됩니다. 다른 기기에서도 한 번씩 선택하세요.</small><input type="file" id="fontfile" hidden></div>
     <div class="fld"><span>글자 크기 <em id="fsv">${p.size}px</em></span><input type="range" min="11" max="16" step="0.5" data-pref="size" value="${p.size}"></div>
     <div class="fld"><span>굵기</span>${seg('pref:weight', [['200', '가늘게'], ['300', '얇게'], ['400', '보통']], String(p.weight))}</div>
     <div class="fld"><span>화면</span>${seg('pref:mode', [['auto', '자동'], ['light', '라이트'], ['dark', '다크']], p.mode)}</div>
@@ -475,6 +478,55 @@ function setPref(o, live) {
   if (live) ls(KEY, S); else commit();
 }
 
+/* ========== 내 폰트 (기기별 IndexedDB 저장) ========== */
+let customMeta = null, customFace = null;
+function idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('ht', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('fonts');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function idbDo(mode, fn) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('fonts', mode), q = fn(tx.objectStore('fonts'));
+    tx.oncomplete = () => res(q && q.result); tx.onerror = () => rej(tx.error);
+  });
+}
+function useFace(buf) {
+  const face = new FontFace('HTCustom', buf.slice(0), { weight: '1 1000' });
+  return face.load().then(f => { if (customFace) document.fonts.delete(customFace); document.fonts.add(f); customFace = f; });
+}
+async function loadCustomFont() {
+  try {
+    const rec = await idbDo('readonly', st => st.get('custom'));
+    if (!rec) return;
+    await useFace(rec.buf);
+    customMeta = { name: rec.name, size: rec.size };
+  } catch (e) { customMeta = null; }
+  softRender();
+}
+async function setCustomFont(file) {
+  if (file.size > 30 * 1048576) return toast('30MB 이하 파일만 사용할 수 있습니다');
+  try {
+    const buf = await file.arrayBuffer();
+    await useFace(buf);
+    const name = file.name.replace(/\.(ttf|otf|woff2?)$/i, '');
+    await idbDo('readwrite', st => st.put({ name, size: file.size, buf }, 'custom'));
+    customMeta = { name, size: file.size };
+    setPref({ font: 'custom' });
+    toast('내 폰트를 적용했습니다');
+  } catch (e) { toast('폰트 파일을 읽을 수 없습니다'); }
+}
+async function delCustomFont() {
+  try { await idbDo('readwrite', st => st.delete('custom')); } catch (e) {}
+  if (customFace) document.fonts.delete(customFace);
+  customFace = null; customMeta = null;
+  if (P().font === 'custom') setPref({ font: 'pretendard' }); else render();
+  toast('내 폰트를 삭제했습니다');
+}
+
 /* ========== tooltip ========== */
 let tipT;
 function showTip(el) {
@@ -566,6 +618,8 @@ document.addEventListener('click', e => {
     }
     case 'untok': if (confirm('동기화를 해제할까요? 이 기기의 데이터는 유지됩니다.')) { cfg = {}; syncMsg = ''; ls(CFG, cfg); render(); } break;
     case 'sync': sync(); break;
+    case 'fontpick': $('#fontfile').click(); break;
+    case 'fontdel': if (confirm('내 폰트 파일을 삭제할까요?')) delCustomFont(); break;
     case 'theme': { const th = THEMES[+b.dataset.i]; setPref({ life: th[1], study: th[2], accent: th[3] }); break; }
     case 'preset-reset': if (confirm('디자인 설정을 기본값으로 되돌릴까요?')) { S.prefs = { ...DEF_P, u: now() }; commit(); } break;
     case 'export': exportData(); break;
@@ -587,6 +641,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.pref) { setPref({ [t.dataset.pref]: prefVal(t) }); return; }
+  if (t.id === 'fontfile' && t.files[0]) { setCustomFont(t.files[0]); t.value = ''; return; }
   if (t.id === 'file' && t.files[0]) {
     t.files[0].text().then(txt => {
       const d = JSON.parse(txt);
@@ -615,5 +670,6 @@ document.addEventListener('visibilitychange', () => {
 addEventListener('online', () => sync());
 
 render();
+loadCustomFont();
 sync();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
