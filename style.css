@@ -102,7 +102,6 @@ textarea{resize:none;line-height:1.5}
 .chk.on{background:var(--c);color:var(--card)}
 .step{display:flex;align-items:center;gap:.5rem}
 .val{min-width:4.2rem;text-align:center;font-size:1rem;font-variant-numeric:tabular-nums}
-.note{background:var(--card)}
 
 /* settings rows */
 .srow{display:flex;align-items:center;gap:8px;padding:.7rem .9rem .7rem 1rem;border-bottom:1px solid var(--line)}
@@ -263,9 +262,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:1.3rem;hei
 .rp-s .r span:first-child{width:22mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .rp-s .r i{display:block;height:2mm;border-radius:0}
 .rp-s .r em{font-style:normal;color:#999;margin-left:auto;white-space:nowrap}
-.rp-n{columns:2;column-gap:8mm}
-.rp-n p{margin:0 0 1.2mm;break-inside:avoid}
-.rp-n b{font-weight:var(--fw);color:#999;margin-right:2mm}
 
 @media print{
   @page{size:A4;margin:12mm}
@@ -275,9 +271,3 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:1.3rem;hei
   .page{width:auto;min-height:0;padding:0;margin:0;box-shadow:none;zoom:1!important}
 }
 
-/* notes */
-#nq{margin-bottom:.4rem}
-.nrow{display:flex;gap:.9rem;padding:.6rem 0;border-bottom:1px solid var(--line);cursor:pointer;font-size:.92rem}
-.nrow:last-child{border-bottom:0}
-.nrow .sub{flex:none;width:5.2rem}
-mark{background:color-mix(in srgb,var(--accent) 70%,transparent);color:inherit;padding:0 1px}

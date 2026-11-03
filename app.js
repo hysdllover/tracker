@@ -340,7 +340,6 @@ function vToday() {
   <div class="prog"><i style="width:${r * 100}%"></i></div>
   <div class="cols"><section>
     ${hs.length ? grp('life') + grp('study') : '<p class="empty">이 날 예정된 습관이 없습니다.</p>'}
-    <h2>한 줄 회고</h2><textarea class="note" id="note" rows="2" placeholder="오늘 하루를 한 줄로">${esc(S.logs[d]?.n?.[0] || '')}</textarea>
   </section><aside>
     <h2>최근 7일</h2><div class="card">${catBars([...Array(7)].map((_, i) => addD(d, i - 6)), x => WD[pd(x).getDay()])}</div>
     <h2>${+d.slice(5, 7)}월 달성</h2><div class="card">${heat(d.slice(0, 7))}</div>
@@ -376,19 +375,8 @@ function vStats() {
   </div></div>
   <h2>습관 매트릭스</h2><div class="card">${matrix(D)}</div>
   <h2>최근 1년</h2><div class="card">${yearHeat()}</div>
-  <h2>한 줄 회고</h2><div class="card"><input type="search" id="nq" placeholder="전체 기간에서 검색" autocomplete="off"><div id="notes">${notesList('')}</div></div>
   <button class="btn" style="width:100%;margin-top:1.2rem" data-act="report">A4 월간 리포트</button>`;
 }
-// 회고 목록: 검색어가 없으면 선택한 달, 있으면 전체 기간
-function notesList(q) {
-  q = q.trim().toLowerCase();
-  const all = Object.keys(S.logs).filter(d => S.logs[d]?.n?.[0]).sort().reverse();
-  const list = (q ? all.filter(d => S.logs[d].n[0].toLowerCase().includes(q)) : all.filter(d => d.startsWith(ym))).slice(0, 100);
-  if (!list.length) return `<p class="empty">${q ? '검색 결과가 없습니다.' : '이 달의 회고가 없습니다.'}</p>`;
-  const hl = txt => { const e = esc(txt); if (!q) return e; const re = new RegExp(esc(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); return e.replace(re, m => `<mark>${m}</mark>`); };
-  return list.map(d => `<div class="nrow" data-act="goto" data-d="${d}"><span class="sub">${q ? d.slice(2).replace(/-/g, '.') : tipDate(d)}</span><span>${hl(S.logs[d].n[0])}</span></div>`).join('');
-}
-
 function designCard() {
   const p = P();
   return `<h2>디자인</h2><div class="card">
@@ -430,7 +418,7 @@ function vSet() {
     <div class="btns"><button class="btn" data-act="export">내보내기</button><button class="btn" data-act="import">가져오기</button></div>
     <input type="file" id="file" accept="application/json,.json" hidden></div>
   <h2>리포트</h2><div class="card"><div class="btns" style="margin:0"><button class="btn" data-act="report">이번 달 A4 리포트</button></div></div>
-  <p class="sub" style="text-align:center;margin-top:28px">습관 트래커 v1.2</p>
+  <p class="sub" style="text-align:center;margin-top:28px">습관 트래커 v1.3</p>
   </div></div>`;
 }
 
@@ -441,7 +429,6 @@ function report(m) {
   const rates = past.map(dayRate).filter(r => r != null);
   const avg = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 100) : 0;
   const total = past.reduce((a, d) => a + hs.filter(h => counts(h, d) && done(h, d)).length, 0);
-  const notes = D.filter(d => S.logs[d]?.n?.[0]);
   const head = D.map((d, i) => { const w = pd(d).getDay(); return `<th class="${w === 0 ? 'sun' : ''}">${i + 1}<br>${WD[w]}</th>`; }).join('');
   const body = hs.map(h => {
     const [dn, n] = hStat(h, past);
@@ -458,8 +445,6 @@ function report(m) {
       <thead><tr><th class="nm"></th>${head}<th>달성</th></tr></thead><tbody>${body}${rrow}</tbody></table>
     <h4>습관별 달성률</h4>
     <div class="rp-s">${hr.map(x => `<div class="r"><span>${esc(x.h.name)}</span><i style="width:${x.r * 40}mm;background:var(--u-${x.h.cat})"></i><em>${x.dn}/${x.n}${x.u} · ${Math.round(x.r * 100)}%</em></div>`).join('') || '<div style="color:#999">기록 없음</div>'}</div>
-    <h4>한 줄 회고</h4>
-    <div class="rp-n">${notes.map(d => `<p><b>${+d.slice(8)}일</b>${esc(S.logs[d].n[0])}</p>`).join('') || '<p style="color:#999">기록 없음</p>'}</div>
   </div>`;
 }
 function openReport(m) {
@@ -688,11 +673,6 @@ const prefVal = t => t.dataset.pref === 'size' ? +t.value : t.value;
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.pref) { setPref({ [t.dataset.pref]: prefVal(t) }, true); if (t.dataset.pref === 'size') $('#fsv').textContent = t.value + 'px'; return; }
-  if (t.id === 'nq') { $('#notes').innerHTML = notesList(t.value); return; }
-  if (e.target.id === 'note') {
-    const L = S.logs[cur] || (S.logs[cur] = { v: {}, n: ['', 0] });
-    L.n = [e.target.value, now()]; commit(true);
-  }
 });
 document.addEventListener('change', e => {
   const t = e.target;
