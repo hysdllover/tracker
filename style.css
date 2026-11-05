@@ -135,7 +135,7 @@ textarea{resize:none;line-height:1.5}
 /* charts */
 .plot{position:relative;height:8.5rem;margin-top:.9rem}
 .plot svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-.gl{position:absolute;left:0;right:0;border-top:1px solid var(--line);pointer-events:none}
+.gl{position:absolute;left:0;right:0;border-top:1px solid var(--line);pointer-events:none;z-index:1}
 .gl span{position:absolute;right:0;bottom:1px;font-size:.68rem;color:var(--sub);background:var(--card);padding-left:4px;line-height:1}
 .gl.base{border-top-color:color-mix(in srgb,var(--sub) 45%,transparent)}
 .hits{position:absolute;inset:0;display:flex}
@@ -271,3 +271,45 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:1.3rem;hei
   .page{width:auto;min-height:0;padding:0;margin:0;box-shadow:none;zoom:1!important}
 }
 
+
+/* ===== v1.4: 휴식일 · 되돌리기 · 시각 · 주간 · 상세 · D-day ===== */
+.rs{background:repeating-linear-gradient(135deg,var(--h0) 0 2px,transparent 2px 5px)!important;box-shadow:inset 0 0 0 1px var(--line)}
+.seq i.rs{display:inline-block}
+.btn.sm{padding:.3rem .7rem;font-size:.85rem}
+.datenav .btn.on{background:var(--accent);border-color:transparent}
+.hinfo{cursor:pointer}
+.val{border:0;background:none;padding:.2rem 0;cursor:pointer}
+.tin{width:6.4rem;padding:.35rem .5rem;text-align:center;font-variant-numeric:tabular-nums}
+#toast.act{pointer-events:auto}
+#toast button{border:0;background:none;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:2px;margin-left:.9rem;padding:0}
+.ddbar{display:flex;align-items:baseline;gap:.55rem;font-size:.92rem;margin-bottom:.4rem}
+.ddbar b{font-size:1.05rem;font-weight:calc(var(--fw) + 100);letter-spacing:.01em}
+.gl.goal{border-top:1px dashed var(--sub)}
+.bars .st i.p{background:color-mix(in srgb,var(--c) 40%,var(--h0))}
+.pt.s{width:.42rem;height:.42rem;margin:-.21rem 0 0 -.21rem;box-shadow:0 0 0 1.5px var(--card)}
+.pt.late{background:var(--card);box-shadow:inset 0 0 0 1.5px var(--sub)}
+.tb tr[data-act]{cursor:pointer}
+.mx td.nm{cursor:pointer}
+
+/* 주간 표 */
+.wt{width:100%;border-collapse:collapse;table-layout:fixed;font-size:.85rem}
+.wt th{font-weight:var(--fw);padding:.55rem 0 .45rem;border-bottom:1px solid var(--line)}
+.wt th button{border:0;background:none;padding:0;width:100%;display:flex;flex-direction:column;align-items:center;color:var(--sub);font-size:.72rem;line-height:1.3}
+.wt th button b{font-size:.95rem;color:var(--text);font-weight:var(--fw);padding:0 .3rem}
+.wt th.td button b{background:var(--accent)}
+.wt th.rsd button{opacity:.5}
+.wt td{padding:.28rem .1rem;text-align:center;border-bottom:1px solid var(--line)}
+.wt tbody tr:last-child td{border-bottom:0}
+.wt .nm{width:5.8rem;text-align:left;padding-left:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;cursor:pointer}
+.wt .nm small{display:block;font-size:.68rem;line-height:1.2}
+.wt tbody .nm::before{content:"";position:absolute;left:.5rem;top:.6rem;bottom:.6rem;width:2px;background:var(--c)}
+.wt .sm{width:2.6rem;text-align:right;padding-right:.8rem;color:var(--sub);font-variant-numeric:tabular-nums;font-size:.78rem}
+.wc{width:100%;max-width:2.6rem;height:2.3rem;margin:auto;display:grid;place-items:center;border:1px solid var(--line);background:var(--card);border-radius:var(--rs);padding:0;font-size:.7rem;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.wc svg{width:1rem;height:1rem;stroke-width:1.8}
+.wc.y{background:var(--c);border-color:transparent;color:var(--card)}
+.wc.p{background:color-mix(in srgb,var(--c) 35%,var(--card));border-color:transparent}
+.wc.n{border-style:dashed;opacity:.35;background:none}
+.wc:disabled{opacity:.3}
+.wt tfoot td{font-size:.72rem;color:var(--sub);padding:.5rem 0;border-top:1px solid var(--line);border-bottom:0}
+.wt tfoot .nm{cursor:default}
+@media (min-width:900px){.wt .nm{width:10rem}.wc{max-width:3.6rem;height:2.7rem;font-size:.8rem}}

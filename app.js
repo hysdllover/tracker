@@ -5,6 +5,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const KEY = 'ht.data', CFG = 'ht.cfg', TMR = 'ht.timer';
 const FILE = 'habit-tracker.json', DESC = 'habit-tracker-sync';
 const WD = '일월화수목금토';
+const WDO = [0, 1, 2, 3, 4, 5, 6]; // 주 시작: 일요일
 const PAL = ['#B5C7DE', '#D4C5E2', '#B8D4C2', '#EBCFB8', '#E6C3C8', '#C3D8D6', '#E2DCB5', '#C9C4BD'];
 const THEMES = [
   ['블루그레이', '#8FA0AE', '#5F6F80', '#BAC2C9'], ['슬레이트 세이지', '#97A596', '#8E9AAB', '#C3C8BE'],
@@ -32,6 +33,11 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const fmtMin = m => { m = Math.round(m); const h = Math.floor(m / 60), r = m % 60; return h ? (r ? `${h}시간 ${r}분` : `${h}시간`) : `${r}분`; };
 const short = m => m >= 60 ? `${(m / 60).toFixed(1).replace(/\.0$/, '')}h` : `${Math.round(m)}m`;
 const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const hhmm = m => `${Math.floor(m / 60)}:${pad(m % 60)}`;
+const hh2 = m => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+const toMin = x => { const [H, M] = x.split(':').map(Number); return H * 60 + M; };
+const dayDiff = (a, b) => Math.round((pd(b) - pd(a)) / 864e5);
+const md = d => `${+d.slice(5, 7)}.${+d.slice(8)}`;
 function ls(k, v) {
   try {
     if (v === undefined) return JSON.parse(localStorage.getItem(k));
@@ -78,18 +84,30 @@ function val(h, d) {
   return S.logs[d]?.v?.[h.id]?.[0] || 0;
 }
 const goal = h => h.type === 'check' ? 1 : h.target;
-const done = (h, d) => val(h, d) >= goal(h);
+// 시각(clock) 습관: 값 = 분+1 (0은 미기록), 목표 시각 이전이면 달성
+const done = (h, d) => { const v = val(h, d); return h.type === 'clock' ? v > 0 && v - 1 <= h.target : v >= goal(h); };
+function fmtVal(h, d) {
+  const v = val(h, d);
+  if (h.type === 'check') return done(h, d) ? '완료' : '미완료';
+  if (h.type === 'clock') return v > 1 ? hhmm(v - 1) : v === 1 ? '완료' : '미기록';
+  return `${Math.round(v)}/${h.target}${h.type === 'time' ? '분' : '회'}`;
+}
+const isRest = d => S.rest?.[d]?.[0] === 1;
+function setRest(d, on) { S.rest = S.rest || {}; S.rest[d] = [on ? 1 : 0, now()]; commit(); }
+const ddays = () => (S.dday || []).filter(x => !x.del).sort((a, b) => a.date < b.date ? -1 : 1);
+const nextDday = () => ddays().find(x => x.date >= today());
+const ddLabel = date => { const n = dayDiff(today(), date); return n === 0 ? 'D-DAY' : `D-${n}`; };
 const weekly = h => h.freq === 'week';
 // 보관 기간(off: [[시작, 끝|null]])을 제외한 활성 여부
 const alive = (h, d) => d >= h.c && !(h.off || []).some(([a, b]) => d >= a && (!b || d < b));
 const archived = h => (h.off || []).some(r => !r[1]);
 // 일일 달성률 대상 (주 n회 습관 제외)
-const sched = (h, d) => !weekly(h) && alive(h, d) && h.days.includes(pd(d).getDay());
+const sched = (h, d) => !weekly(h) && alive(h, d) && h.days.includes(pd(d).getDay()) && !isRest(d);
 // 오늘 목록 표시 대상
 const shown = (h, d) => alive(h, d) && (weekly(h) || h.days.includes(pd(d).getDay()));
 // 달성 횟수 집계 대상 (주 n회 습관은 한 날도 포함)
 const counts = (h, d) => sched(h, d) || (weekly(h) && alive(h, d));
-const wkStart = d => addD(d, -((pd(d).getDay() + 6) % 7));
+const wkStart = d => addD(d, -pd(d).getDay());
 function wkDone(h, d) { const s = wkStart(d); let n = 0; for (let i = 0; i < 7; i++) { const x = addD(s, i); if (alive(h, x) && done(h, x)) n++; } return n; }
 const wkMet = (h, d) => wkDone(h, d) >= (h.per || 1);
 const inRange = (h, D) => D.some(d => alive(h, d));
@@ -121,10 +139,31 @@ function streak(h) {
   }
   return n;
 }
+function longest(h) {
+  const t = today(); let best = 0, run = 0;
+  if (weekly(h)) {
+    for (let w = wkStart(h.c); w <= t; w = addD(w, 7)) { if (wkMet(h, w)) best = Math.max(best, ++run); else if (addD(w, 6) < t) run = 0; }
+    return best;
+  }
+  for (let d = h.c; d <= t; d = addD(d, 1)) { if (!sched(h, d)) continue; if (done(h, d)) best = Math.max(best, ++run); else if (d < t) run = 0; }
+  return best;
+}
 function setVal(h, d, v) {
   const L = S.logs[d] || (S.logs[d] = { v: {}, n: ['', 0] });
   L.v[h.id] = [Math.max(0, v), now()];
   commit();
+}
+let undoFn = null;
+function offerUndo(msg, fn) { undoFn = fn; toast(msg, true); }
+function setValU(h, d, v) {
+  const prev = S.logs[d]?.v?.[h.id]?.[0] || 0;
+  setVal(h, d, v);
+  offerUndo(`${h.name} · ${fmtVal(h, d)}`, () => setVal(h, d, prev));
+}
+function habitU(h, msg, mut) {
+  const i = S.habits.indexOf(h), prev = JSON.stringify(h);
+  mut();
+  offerUndo(msg, () => { S.habits[i] = { ...JSON.parse(prev), u: now() }; commit(); });
 }
 function commit(noRender) {
   delete S.seed; S.u = now(); memo = null;
@@ -146,8 +185,10 @@ function merge(a, b) {
     for (const k in y.v) if (!v[k] || y.v[k][1] > v[k][1]) v[k] = y.v[k];
     logs[d] = { v, n: (y.n?.[1] || 0) > (x.n?.[1] || 0) ? y.n : (x.n || ['', 0]) };
   }
+  const rest = { ...(a.rest || {}) };
+  for (const k in b.rest || {}) if (!rest[k] || b.rest[k][1] > rest[k][1]) rest[k] = b.rest[k];
   return {
-    habits: mergeArr(a.habits, b.habits), subjects: mergeArr(a.subjects, b.subjects),
+    habits: mergeArr(a.habits, b.habits), subjects: mergeArr(a.subjects, b.subjects), dday: mergeArr(a.dday, b.dday), rest,
     sessions: mergeArr(a.sessions, b.sessions), logs, u: Math.max(a.u || 0, b.u || 0),
     prefs: (b.prefs?.u || 0) > (a.prefs?.u || 0) ? b.prefs : a.prefs,
   };
@@ -204,23 +245,28 @@ async function sync() {
 }
 
 /* ========== views ========== */
-let view = location.hash.slice(1) || 'today';
+let view = 'today', hid = null;
+function parseHash() { const x = location.hash.slice(1) || 'today'; if (x.startsWith('h=')) { view = 'habit'; hid = x.slice(2); } else view = x; }
+parseHash();
 let cur = today(), lastToday = today();
 let ym = today().slice(0, 7);
+let wkCur = wkStart(today());
 
 function row(h, d) {
-  const v = val(h, d), t = goal(h), ok = v >= t, st = streak(h);
+  const v = val(h, d), t = goal(h), ok = done(h, d), st = streak(h);
   const unit = h.type === 'time' ? '분' : h.type === 'count' ? '회' : '';
   const meta = [];
-  if (h.type !== 'check') meta.push(`목표 ${t}${unit}`);
+  if (h.type === 'clock') meta.push(`목표 ${hhmm(h.target)} 이전`);
+  else if (h.type !== 'check') meta.push(`목표 ${t}${unit}`);
   if (weekly(h)) { const c = wkDone(h, d); meta.push(`이번 주 ${c}/${h.per}${c >= h.per ? ' 달성' : ''}`); }
-  else if (h.days.length < 7) meta.push([1, 2, 3, 4, 5, 6, 0].filter(i => h.days.includes(i)).map(i => WD[i]).join(''));
+  else if (h.days.length < 7) meta.push(WDO.filter(i => h.days.includes(i)).map(i => WD[i]).join(''));
   if (st) meta.push(`${st}${sunit(h)} 연속`);
   const w7 = [...Array(7)].map((_, i) => addD(d, i - 6)).map(x => `<i class="${weekly(h) ? (!alive(h, x) ? 'n' : done(h, x) ? 'y' : val(h, x) > 0 ? 'p' : '') : !sched(h, x) ? 'n' : done(h, x) ? 'y' : val(h, x) > 0 ? 'p' : ''}"></i>`).join('');
   let ctl;
   if (h.type === 'check') ctl = `<button class="chk ${ok ? 'on' : ''}" data-act="tog" data-id="${h.id}" aria-label="완료">${I.check}</button>`;
-  else ctl = `<div class="step"><button class="ib" data-act="inc" data-id="${h.id}" data-n="-1">${I.minus}</button><span class="val">${v}<small>/${t}${unit}</small></span><button class="ib" data-act="inc" data-id="${h.id}" data-n="1">${I.plus}</button></div>`;
-  return `<div class="hrow ${h.cat} ${ok ? 'ok' : ''}"><div class="hinfo"><div class="hname">${esc(h.name)}</div><div class="hmeta"><span class="wd7">${w7}</span><span>${meta.join(' · ') || '매일'}</span></div></div>${ctl}${h.type !== 'check' ? `<i class="pbar" style="width:${Math.min(1, v / t) * 100}%"></i>` : ''}</div>`;
+  else if (h.type === 'clock') ctl = `<div class="step">${v > 1 ? '' : `<button class="btn sm" data-act="clnow" data-id="${h.id}">지금</button>`}<input type="time" class="tin" data-clock="${h.id}" value="${v > 1 ? hh2(v - 1) : ''}" aria-label="시각"></div>`;
+  else ctl = `<div class="step"><button class="ib" data-act="inc" data-id="${h.id}" data-n="-1">${I.minus}</button><button class="val" data-act="vedit" data-id="${h.id}" data-d="${d}">${v}<small>/${t}${unit}</small></button><button class="ib" data-act="inc" data-id="${h.id}" data-n="1">${I.plus}</button></div>`;
+  return `<div class="hrow ${h.cat} ${ok ? 'ok' : ''}"><div class="hinfo" data-act="hopen" data-id="${h.id}"><div class="hname">${esc(h.name)}</div><div class="hmeta"><span class="wd7">${w7}</span><span>${meta.join(' · ') || '매일'}</span></div></div>${ctl}${h.type === 'count' || h.type === 'time' ? `<i class="pbar" style="width:${Math.min(1, v / t) * 100}%"></i>` : ''}</div>`;
 }
 const lvl = r => r == null ? 'na' : r === 0 ? '' : r < .34 ? 'l1' : r < .67 ? 'l2' : r < 1 ? 'l3' : 'l4';
 const tipDate = d => `${+d.slice(5, 7)}/${+d.slice(8)} (${WD[pd(d).getDay()]})`;
@@ -238,7 +284,7 @@ function catBars(D, lab) {
   const mx = Math.max(1, ...data.map(o => o.n));
   const bars = D.map((d, i) => {
     const o = data[i], s = o.life + o.study;
-    return `<div data-tip="${tipDate(d)} · ${o.n ? `${s}/${o.n} 달성\n일상 ${o.life} · 공부 ${o.study}` : '-'}"><div class="st" style="height:${o.n / mx * 100}%">${C.filter(c => o[c]).map(c => `<i class="${c}" style="flex:${o[c]} 1 0"></i>`).join('')}${o.n - s ? `<i style="flex:${o.n - s} 1 0;--c:var(--h0)"></i>` : ''}</div></div>`;
+    return `<div data-tip="${tipDate(d)} · ${isRest(d) ? '휴식일' : o.n ? `${s}/${o.n} 달성\n일상 ${o.life} · 공부 ${o.study}` : '-'}"><div class="st" style="height:${o.n / mx * 100}%">${C.filter(c => o[c]).map(c => `<i class="${c}" style="flex:${o[c]} 1 0"></i>`).join('')}${o.n - s ? `<i style="flex:${o.n - s} 1 0;--c:var(--h0)"></i>` : ''}</div></div>`;
   }).join('');
   return `<div class="plot"><div class="gl" style="top:0"><span>${mx}</span></div><div class="gl base" style="top:100%"></div><div class="bars">${bars}</div></div>
   <div class="xax">${D.map((d, i) => `<span>${lab(d, i)}</span>`).join('')}</div>
@@ -268,7 +314,7 @@ function habitRank(D) {
     return { h, r: n ? dn / n : null, dn, n, u, st: streak(h) };
   }).sort((a, b) => (b.r ?? -1) - (a.r ?? -1));
   if (!rows.length) return '<p class="empty">습관이 없습니다.</p>';
-  return `<table class="tb"><thead><tr><th>습관</th><th class="bc wide">달성률</th><th class="num"></th><th class="num">연속</th></tr></thead><tbody>${rows.map(x => `<tr class="${x.h.cat}" data-tip="${esc(x.h.name)} · ${x.dn}/${x.n}${x.u}${weekly(x.h) ? ` (주 ${x.h.per}회 목표)` : ''}"><td>${esc(x.h.name)}${archived(x.h) ? ' <small>보관</small>' : ''}</td><td class="bc wide"><div class="ibar"><i style="width:${(x.r || 0) * 100}%"></i></div></td><td class="num">${x.r == null ? '-' : pct(x.r)}</td><td class="num sub">${x.st}${x.u}</td></tr>`).join('')}</tbody></table>`;
+  return `<table class="tb"><thead><tr><th>습관</th><th class="bc wide">달성률</th><th class="num"></th><th class="num">연속</th></tr></thead><tbody>${rows.map(x => `<tr class="${x.h.cat}" data-act="hopen" data-id="${x.h.id}" data-tip="${esc(x.h.name)} · ${x.dn}/${x.n}${x.u}${weekly(x.h) ? ` (주 ${x.h.per}회 목표)` : ''}"><td>${esc(x.h.name)}${archived(x.h) ? ' <small>보관</small>' : ''}</td><td class="bc wide"><div class="ibar"><i style="width:${(x.r || 0) * 100}%"></i></div></td><td class="num">${x.r == null ? '-' : pct(x.r)}</td><td class="num sub">${x.st}${x.u}</td></tr>`).join('')}</tbody></table>`;
 }
 
 /* 습관 × 날짜 매트릭스 */
@@ -278,20 +324,25 @@ function matrix(D) {
   const head = D.map((d, i) => `<th>${i % 7 === 0 ? +d.slice(8) : ''}</th>`).join('');
   const rows = hs.map(h => {
     const [dn, n] = hStat(h, D);
-    return `<tr class="${h.cat}"><td class="nm">${esc(h.name)}${weekly(h) ? ` <small>주${h.per}</small>` : ''}</td>${D.map(d => {
+    return `<tr class="${h.cat}"><td class="nm" data-act="hopen" data-id="${h.id}">${esc(h.name)}${weekly(h) ? ` <small>주${h.per}</small>` : ''}</td>${D.map(d => {
+      if (!weekly(h) && isRest(d) && alive(h, d) && h.days.includes(pd(d).getDay())) return `<td><i class="rs" data-tip="${tipDate(d)} · 휴식일"></i></td>`;
       if (weekly(h) ? !alive(h, d) : !sched(h, d)) return '<td><i class="n"></i></td>';
       if (d > t) return '<td><i class="f"></i></td>';
-      const v = val(h, d), ok = v >= goal(h);
-      const st = h.type === 'check' ? (ok ? '완료' : '미완료') : `${Math.round(v)}/${goal(h)}${h.type === 'time' ? '분' : '회'}`;
-      return `<td><i class="${ok ? 'y' : v > 0 ? 'p' : ''}" data-tip="${esc(h.name)} · ${tipDate(d)}\n${st}"></i></td>`;
+      const v = val(h, d), ok = done(h, d);
+      return `<td><i class="${ok ? 'y' : v > 0 ? 'p' : ''}" data-tip="${esc(h.name)} · ${tipDate(d)}\n${fmtVal(h, d)}"></i></td>`;
     }).join('')}<td class="rt">${n ? Math.round(dn / n * 100) + '%' : '-'}</td></tr>`;
   }).join('');
   return `<table class="mx"><thead><tr><th class="nm"></th>${head}<th class="rt">달성</th></tr></thead><tbody>${rows}</tbody></table>
   <div class="legend"><span><i style="--c:var(--life)"></i>일상</span><span><i style="--c:var(--study)"></i>공부</span><span><i style="--c:color-mix(in srgb,var(--life) 45%,var(--h0))"></i>부분 달성</span></div>`;
 }
 
-/* 최근 1년 잔디 */
-function yearHeat() {
+/* 최근 1년 잔디: fn(d) → [class, tip] */
+function dayCell(d) {
+  if (isRest(d)) return ['rs', `${tipDate(d)} · 휴식일`];
+  const r = rateOf(d);
+  return [r ? lvl(r[0] / r[1]) : '', `${tipDate(d)} · ${r ? `${pct(r[0] / r[1])} (${r[0]}/${r[1]})` : '기록 없음'}`];
+}
+function yearHeat(fn = dayCell, legend = true) {
   const t = today(), start = addD(t, -(52 * 7 + pd(t).getDay()));
   let cells = '', mons = '';
   for (let w = 0; w < 53; w++) {
@@ -302,19 +353,19 @@ function yearHeat() {
     for (let k = 0; k < 7; k++) {
       const d = addD(ws, k);
       if (d > t) { cells += `<i class="fu ${old}"></i>`; continue; }
-      const r = rateOf(d);
-      cells += `<i class="${old} ${r ? lvl(r[0] / r[1]) : ''}" data-tip="${tipDate(d)} · ${r ? `${pct(r[0] / r[1])} (${r[0]}/${r[1]})` : '기록 없음'}"></i>`;
+      const [c, tip] = fn(d);
+      cells += `<i class="${old} ${c}" data-tip="${esc(tip)}"></i>`;
     }
   }
   return `<div class="yhw"><div></div><div class="yhm">${mons}</div><div class="yhd">${['', '월', '', '수', '', '금', ''].map(x => `<span>${x}</span>`).join('')}</div><div class="yh">${cells}</div></div>
-  <div class="seq">적음 <i></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> 많음</div>`;
+  ${legend ? '<div class="seq">적음 <i></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> 많음 <i class="rs" style="margin-left:.6rem"></i> 휴식</div>' : '<div class="seq"><i class="l4"></i> 달성 <i class="l2" style="margin-left:.5rem"></i> 부분 <i class="rs" style="margin-left:.5rem"></i> 휴식</div>'}`;
 }
 
 /* 요일 패턴 (최근 8주) */
 function weekdayTable() {
   const t = today(), D = [...Array(56)].map((_, i) => addD(t, i - 55)), hs = habits();
   const rate = (dd, cat) => { let n = 0, k = 0; dd.forEach(d => hs.forEach(h => { if ((!cat || h.cat === cat) && sched(h, d)) { n++; if (done(h, d)) k++; } })); return n ? k / n : null; };
-  const rows = [1, 2, 3, 4, 5, 6, 0].map(w => { const dd = D.filter(d => pd(d).getDay() === w); return { w, a: rate(dd), l: rate(dd, 'life'), s: rate(dd, 'study') }; });
+  const rows = WDO.map(w => { const dd = D.filter(d => pd(d).getDay() === w); return { w, a: rate(dd), l: rate(dd, 'life'), s: rate(dd, 'study') }; });
   const br = Math.max(...rows.map(r => r.a || 0)), f = r => r == null ? '-' : pct(r);
   return `<table class="tb"><thead><tr><th>요일</th><th class="bc wide">전체</th><th class="num"></th><th class="num">일상</th><th class="num">공부</th></tr></thead><tbody>${rows.map(r => `<tr><td${r.a && r.a === br ? ' class="hi"' : ''}>${WD[r.w]}</td><td class="bc wide"><div class="ibar" style="--c:var(--heat)"><i style="width:${(r.a || 0) * 100}%"></i></div></td><td class="num">${f(r.a)}</td><td class="num sub">${f(r.l)}</td><td class="num sub">${f(r.s)}</td></tr>`).join('')}</tbody></table>`;
 }
@@ -324,7 +375,7 @@ function heat(m) {
   let h = [...WD].map(w => `<div class="wd">${w}</div>`).join('') + '<div></div>'.repeat(off);
   for (let i = 1; i <= n; i++) {
     const d = `${m}-${pad(i)}`;
-    const c = d > t ? 'fu' : lvl(dayRate(d));
+    const c = d > t ? 'fu' : isRest(d) ? 'rs' : lvl(dayRate(d));
     h += `<button class="d ${c} ${d === t ? 'td' : ''}" data-act="goto" data-d="${d}">${i}</button>`;
   }
   return `<div class="cal">${h}</div>`;
@@ -336,9 +387,11 @@ function vToday() {
   const diff = Math.round((pd(today()) - dt) / 864e5);
   const rel = diff === 0 ? '오늘' : diff === 1 ? '어제' : diff === -1 ? '내일' : diff > 0 ? `${diff}일 전` : `${-diff}일 후`;
   const grp = c => { const l = hs.filter(h => h.cat === c); return l.length ? `<h2>${c === 'life' ? '일상' : '공부'}</h2><div class="card list">${l.map(h => row(h, d)).join('')}</div>` : ''; };
-  return `<header class="top"><div><div class="sub">${rel}</div><h1>${dt.getMonth() + 1}월 ${dt.getDate()}일 ${WD[dt.getDay()]}요일</h1>
-    <div class="datenav"><button class="btn" data-act="day" data-n="-1">이전</button>${diff ? '<button class="btn" data-act="day" data-n="0">오늘</button>' : ''}<button class="btn" data-act="day" data-n="1">다음</button></div></div>
-    <div class="score"><b>${pct(r)}</b><span class="sub">${dn}/${dl.length} 완료</span></div></header>
+  const dd = nextDday(), rest = isRest(d);
+  return `${dd ? `<div class="ddbar"><span>${esc(dd.name)}</span><b>${ddLabel(dd.date)}</b><span class="sub">${md(dd.date)}</span></div>` : ''}
+  <header class="top"><div><div class="sub">${rel}</div><h1>${dt.getMonth() + 1}월 ${dt.getDate()}일 ${WD[dt.getDay()]}요일</h1>
+    <div class="datenav"><button class="btn" data-act="day" data-n="-1">이전</button>${diff ? '<button class="btn" data-act="day" data-n="0">오늘</button>' : ''}<button class="btn" data-act="day" data-n="1">다음</button><button class="btn ${rest ? 'on' : ''}" data-act="rest" data-d="${d}">휴식일</button></div></div>
+    ${rest ? '<div class="score"><b>휴식</b><span class="sub">통계에서 제외</span></div>' : `<div class="score"><b>${pct(r)}</b><span class="sub">${dn}/${dl.length} 완료</span></div>`}</header>
   <div class="prog"><i style="width:${r * 100}%"></i></div>
   <div class="cols"><section>
     ${hs.length ? grp('life') + grp('study') : '<p class="empty">이 날 예정된 습관이 없습니다.</p>'}
@@ -346,6 +399,94 @@ function vToday() {
     <h2>최근 7일</h2><div class="card">${catBars([...Array(7)].map((_, i) => addD(d, i - 6)), x => WD[pd(x).getDay()])}</div>
     <h2>${+d.slice(5, 7)}월 달성</h2><div class="card">${heat(d.slice(0, 7))}</div>
   </aside></div>`;
+}
+
+function vWeek() {
+  const t = today(), D = [...Array(7)].map((_, i) => addD(wkCur, i)), hs = habits().filter(h => inRange(h, D));
+  const rows = ['life', 'study'].flatMap(c => hs.filter(h => h.cat === c));
+  const head = D.map(d => `<th class="${d === t ? 'td' : ''} ${isRest(d) ? 'rsd' : ''}"><button data-act="wday" data-d="${d}">${WD[pd(d).getDay()]}<b>${+d.slice(8)}</b></button></th>`).join('');
+  const cell = (h, d) => {
+    if (!alive(h, d) || (!weekly(h) && !h.days.includes(pd(d).getDay()))) return '<td><span class="wc n"></span></td>';
+    const ok = done(h, d), v = val(h, d);
+    const txt = h.type === 'check' ? (ok ? I.check : '') : h.type === 'clock' ? (v > 1 ? hhmm(v - 1) : v === 1 ? I.check : '') : (v ? Math.round(v) : '');
+    return `<td><button class="wc ${ok ? 'y' : v > 0 ? 'p' : ''} ${isRest(d) ? 'rs' : ''}" data-act="wcell" data-id="${h.id}" data-d="${d}"${d > t ? ' disabled' : ''}>${txt}</button></td>`;
+  };
+  const sum = h => {
+    if (weekly(h)) return `${wkDone(h, wkCur)}/${h.per}`;
+    const sc = D.filter(d => d <= t && sched(h, d)); return sc.length ? `${sc.filter(d => done(h, d)).length}/${sc.length}` : '-';
+  };
+  const foot = D.map(d => { const r = d <= t ? dayRate(d) : null; return `<td>${isRest(d) ? '휴식' : r == null ? '' : pct(r)}</td>`; }).join('');
+  return `<header class="top"><h1>주간</h1><div class="mnav">${wkCur !== wkStart(t) ? '<button class="btn sm" data-act="wk" data-n="0">이번 주</button>' : ''}<button class="ib" data-act="wk" data-n="-1">${I.l}</button><span>${md(D[0])} – ${md(D[6])}</span><button class="ib" data-act="wk" data-n="1">${I.r}</button></div></header>
+  <div class="card list" style="margin-top:.6rem">${rows.length ? `<table class="wt"><thead><tr><th class="nm"></th>${head}<th class="sm"></th></tr></thead>
+    <tbody>${rows.map(h => `<tr class="${h.cat}"><td class="nm" data-act="hopen" data-id="${h.id}">${esc(h.name)}${weekly(h) ? `<small>주 ${h.per}회</small>` : ''}</td>${D.map(d => cell(h, d)).join('')}<td class="sm">${sum(h)}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td class="nm">달성률</td>${foot}<td class="sm"></td></tr></tfoot></table>` : '<p class="empty">이 주에 해당하는 습관이 없습니다.</p>'}</div>
+  <p class="sub" style="margin:.8rem 2px 0">칸을 눌러 기록 · 날짜를 눌러 휴식일 지정 · 이름을 눌러 상세 보기</p>`;
+}
+
+/* ---------- 습관 상세 ---------- */
+function monthBars(h) {
+  const t = today(), ms = [...Array(12)].map((_, i) => { const x = pd(t.slice(0, 7) + '-01'); x.setMonth(x.getMonth() - 11 + i); return ds(x).slice(0, 7); });
+  const bars = ms.map(m => {
+    const D = monthDays(m), st = inRange(h, D) ? hStat(h, D) : null, r = st && st[1] ? st[0] / st[1] : null;
+    return `<div data-tip="${m.replace('-', '.')} · ${r == null ? '기록 없음' : `${pct(r)} (${st[0]}/${st[1]}${st[2]})`}"><div class="st" style="height:${(r || 0) * 100}%"><i style="flex:1 1 0"></i></div></div>`;
+  }).join('');
+  return `<div class="plot ${h.cat}"><div class="gl" style="top:0"><span>100</span></div><div class="gl" style="top:50%"><span>50</span></div><div class="gl base" style="top:100%"></div><div class="bars">${bars}</div></div>
+  <div class="xax">${ms.map(m => `<span>${+m.slice(5)}</span>`).join('')}</div>`;
+}
+function hWeekday(h) {
+  const t = today(), all = []; for (let d = h.c; d <= t; d = addD(d, 1)) all.push(d);
+  if (weekly(h)) {
+    const c = WDO.map(w => all.filter(d => pd(d).getDay() === w && alive(h, d) && done(h, d)).length), mx = Math.max(1, ...c);
+    return `<table class="tb"><thead><tr><th>요일</th><th class="bc wide">실행 횟수</th><th class="num"></th></tr></thead><tbody>${WDO.map((w, i) => `<tr class="${h.cat}"><td>${WD[w]}</td><td class="bc wide"><div class="ibar"><i style="width:${c[i] / mx * 100}%"></i></div></td><td class="num">${c[i]}회</td></tr>`).join('')}</tbody></table>`;
+  }
+  const rs = WDO.map(w => { const sc = all.filter(d => pd(d).getDay() === w && sched(h, d)); return sc.length ? [sc.filter(d => done(h, d)).length, sc.length] : null; });
+  return `<table class="tb"><thead><tr><th>요일</th><th class="bc wide">달성률</th><th class="num"></th></tr></thead><tbody>${WDO.map((w, i) => `<tr class="${h.cat}"><td>${WD[w]}</td><td class="bc wide"><div class="ibar"><i style="width:${rs[i] ? rs[i][0] / rs[i][1] * 100 : 0}%"></i></div></td><td class="num">${rs[i] ? `${pct(rs[i][0] / rs[i][1])} <small>${rs[i][0]}/${rs[i][1]}</small>` : '-'}</td></tr>`).join('')}</tbody></table>`;
+}
+function clockChart(h) {
+  const t = today(), D = [...Array(30)].map((_, i) => addD(t, i - 29));
+  const pts = D.map((d, i) => [i, val(h, d) > 1 ? val(h, d) - 1 : null, d]).filter(p => p[1] != null);
+  if (!pts.length) return '<p class="empty">최근 30일 시각 기록이 없습니다.</p>';
+  const vs = pts.map(p => p[1]).concat(h.target), lo = Math.floor((Math.min(...vs) - 10) / 30) * 30, hi = Math.ceil((Math.max(...vs) + 10) / 30) * 30;
+  const X = i => (i + .5) / 30 * 100, Y = m => 6 + (m - lo) / (hi - lo) * 88;
+  const line = pts.map((p, k) => `${k ? 'L' : 'M'}${X(p[0]).toFixed(2)} ${Y(p[1]).toFixed(2)}`).join('');
+  const avg = Math.round(pts.reduce((a, p) => a + p[1], 0) / pts.length), ok = pts.filter(p => p[1] <= h.target).length;
+  return `<div class="sub">평균 <span style="color:var(--text)">${hhmm(avg)}</span> · 목표 이전 ${ok}/${pts.length}일</div>
+  <div class="plot"><div class="gl" style="top:${Y(lo)}%"><span>${hhmm(lo)}</span></div><div class="gl goal" style="top:${Y(h.target)}%"><span>목표 ${hhmm(h.target)}</span></div><div class="gl base" style="top:${Y(hi)}%"><span>${hhmm(hi)}</span></div>
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none"><path d="${line}" style="fill:none;stroke:var(--h3);stroke-width:1.2" vector-effect="non-scaling-stroke"/></svg>
+    ${pts.map(p => `<i class="pt s ${p[1] > h.target ? 'late' : ''}" style="left:${X(p[0])}%;top:${Y(p[1])}%"></i>`).join('')}
+    <div class="hits">${D.map(d => `<div data-tip="${tipDate(d)} · ${fmtVal(h, d)}"></div>`).join('')}</div></div>
+  <div class="xax">${D.map((d, i) => `<span>${i % 7 === 1 ? md(d) : ''}</span>`).join('')}</div>`;
+}
+function valBars(h) {
+  const t = today(), D = [...Array(30)].map((_, i) => addD(t, i - 29)), vs = D.map(d => val(h, d)), mx = Math.max(h.target * 1.2, ...vs), u = h.type === 'time' ? '분' : '회';
+  return `<div class="plot ${h.cat}"><div class="gl goal" style="top:${(1 - h.target / mx) * 100}%"><span>목표 ${h.target}${u}</span></div><div class="gl base" style="top:100%"></div>
+    <div class="bars">${D.map((d, i) => `<div data-tip="${tipDate(d)} · ${Math.round(vs[i])}${u}"><div class="st" style="height:${vs[i] / mx * 100}%"><i class="${vs[i] >= h.target ? '' : 'p'}" style="flex:1 1 0"></i></div></div>`).join('')}</div></div>
+  <div class="xax">${D.map((d, i) => `<span>${i % 7 === 1 ? md(d) : ''}</span>`).join('')}</div>`;
+}
+function vHabit() {
+  const h = S.habits.find(x => x.id === hid && !x.del);
+  if (!h) return '<p class="empty">습관을 찾을 수 없습니다.</p>';
+  const t = today(), all = []; for (let d = h.c; d <= t; d = addD(d, 1)) all.push(d);
+  const [k, n, u] = hStat(h, all), [mk, mn] = hStat(h, monthDays(t.slice(0, 7)));
+  const hc = d => {
+    if (!alive(h, d)) return ['', `${tipDate(d)} · -`];
+    if (!weekly(h) && isRest(d)) return ['rs', `${tipDate(d)} · 휴식일`];
+    if (!weekly(h) && !sched(h, d)) return ['', `${tipDate(d)} · 예정 없음`];
+    return [done(h, d) ? 'l4' : val(h, d) > 0 ? 'l2' : '', `${tipDate(d)} · ${fmtVal(h, d)}`];
+  };
+  return `<header class="top"><div><button class="btn sm" data-act="back">${I.l.replace('<svg', '<svg style="width:.9rem;height:.9rem;vertical-align:-2px"')} 뒤로</button>
+    <h1 style="margin-top:.6rem">${esc(h.name)}</h1><div class="sub">${hDesc(h)}${archived(h) ? ' · 보관됨' : ''} · ${h.c.slice(2).replace(/-/g, '.')} 시작</div></div>
+    <button class="ib" data-act="hedit" data-id="${h.id}" aria-label="편집">${I.edit}</button></header>
+  <div class="tiles" style="margin-top:.8rem">
+    <div class="tile"><span class="sub">현재 연속</span><b>${streak(h)}${u}</b></div>
+    <div class="tile"><span class="sub">최장 연속</span><b>${longest(h)}${u}</b></div>
+    <div class="tile"><span class="sub">전체 달성률</span><b>${n ? pct(k / n) : '-'}</b><small>${k}/${n}${u}</small></div>
+    <div class="tile"><span class="sub">이번 달</span><b>${mn ? pct(mk / mn) : '-'}</b><small>${mk}/${mn}${u}</small></div>
+  </div>
+  ${h.type === 'clock' ? `<h2>시각 · 최근 30일</h2><div class="card">${clockChart(h)}</div>` : h.type !== 'check' ? `<h2>${h.type === 'time' ? '시간' : '횟수'} · 최근 30일</h2><div class="card">${valBars(h)}</div>` : ''}
+  <div class="grid2"><div><h2>월별 달성률 · 최근 12개월</h2><div class="card">${monthBars(h)}</div></div>
+  <div><h2>요일별</h2><div class="card">${hWeekday(h)}</div></div></div>
+  <h2>최근 1년</h2><div class="card ${h.cat}">${yearHeat(hc, false)}</div>`;
 }
 
 function monthDays(m) {
@@ -395,9 +536,14 @@ function designCard() {
     <button class="btn" data-act="preset-reset">기본값으로</button>
   </div>`;
 }
+function ddCard() {
+  const t = today();
+  return `<h2>D-day</h2><div class="card list">${ddays().map(x => `<div class="srow"><div class="grow"><div class="${x.date < t ? 'sub' : ''}">${esc(x.name)}</div><div class="hmeta">${x.date.replace(/-/g, '.')} · ${x.date < t ? '지남' : ddLabel(x.date)}</div></div><button class="ib" data-act="ddedit" data-id="${x.id}" aria-label="편집">${I.edit}</button></div>`).join('') || '<p class="empty">등록된 D-day가 없습니다.</p>'}</div>
+  <button class="btn add" data-act="ddedit">D-day 추가</button>`;
+}
 function hDesc(h) {
-  const TY = { check: '완료', count: '횟수', time: '시간' };
-  return `${h.cat === 'life' ? '일상' : '공부'} · ${TY[h.type]}${h.type !== 'check' ? ' ' + h.target + (h.type === 'time' ? '분' : '회') : ''}${weekly(h) ? ` · 주 ${h.per}회` : h.days.length < 7 ? ' · ' + [1, 2, 3, 4, 5, 6, 0].filter(x => h.days.includes(x)).map(x => WD[x]).join('') : ''}`;
+  const TY = { check: '완료', count: '횟수', time: '시간', clock: '시각' };
+  return `${h.cat === 'life' ? '일상' : '공부'} · ${TY[h.type]}${h.type === 'clock' ? ` ${hhmm(h.target)} 이전` : h.type !== 'check' ? ' ' + h.target + (h.type === 'time' ? '분' : '회') : ''}${weekly(h) ? ` · 주 ${h.per}회` : h.days.length < 7 ? ' · ' + WDO.filter(x => h.days.includes(x)).map(x => WD[x]).join('') : ''}`;
 }
 function vSet() {
   return `<header class="top"><h1>설정</h1></header>
@@ -406,6 +552,7 @@ function vSet() {
     ${i ? `<button class="ib" data-act="hup" data-id="${h.id}" aria-label="위로">${I.up}</button>` : ''}${i < a.length - 1 ? `<button class="ib" data-act="hdn" data-id="${h.id}" aria-label="아래로">${I.down}</button>` : ''}<button class="ib" data-act="hedit" data-id="${h.id}" aria-label="편집">${I.edit}</button></div>`).join('') || '<p class="empty">습관이 없습니다.</p>'}</div>
   <button class="btn add" data-act="hedit">습관 추가</button>
   ${habits().some(archived) ? `<h2>보관된 습관</h2><div class="card list">${habits().filter(archived).map(h => `<div class="srow"><span class="dot" style="--c:var(--${h.cat})"></span><div class="grow"><div class="sub">${esc(h.name)}</div><div class="hmeta">${hDesc(h)} · ${h.off.find(r => !r[1])[0].slice(2).replace(/-/g, '.')} 보관</div></div><button class="btn" data-act="hrest" data-id="${h.id}">복원</button><button class="ib" data-act="hedit" data-id="${h.id}" aria-label="편집">${I.edit}</button></div>`).join('')}</div>` : ''}
+  ${ddCard()}
   </div><div>
   ${designCard()}
   <h2>동기화 · GitHub Gist</h2><div class="card">${cfg.token ? `
@@ -420,7 +567,7 @@ function vSet() {
     <div class="btns"><button class="btn" data-act="export">내보내기</button><button class="btn" data-act="import">가져오기</button></div>
     <input type="file" id="file" accept="application/json,.json" hidden></div>
   <h2>리포트</h2><div class="card"><div class="btns" style="margin:0"><button class="btn" data-act="report">이번 달 A4 리포트</button></div></div>
-  <p class="sub" style="text-align:center;margin-top:28px">습관 트래커 v1.3</p>
+  <p class="sub" style="text-align:center;margin-top:28px">습관 트래커 v1.4</p>
   </div></div>`;
 }
 
@@ -434,13 +581,13 @@ function report(m) {
   const head = D.map((d, i) => { const w = pd(d).getDay(); return `<th class="${w === 0 ? 'sun' : ''}">${i + 1}<br>${WD[w]}</th>`; }).join('');
   const body = hs.map(h => {
     const [dn, n] = hStat(h, past);
-    const cell = d => weekly(h) ? (alive(h, d) && d <= t && done(h, d) ? `<span class="c ${h.cat}"></span>` : '') : !sched(h, d) ? '' : `<span class="c ${d <= t && done(h, d) ? h.cat : 's'}"></span>`;
+    const cell = d => isRest(d) && alive(h, d) && !weekly(h) && h.days.includes(pd(d).getDay()) ? '<span class="c r"></span>' : weekly(h) ? (alive(h, d) && d <= t && done(h, d) ? `<span class="c ${h.cat}"></span>` : '') : !sched(h, d) ? '' : `<span class="c ${d <= t && done(h, d) ? h.cat : 's'}"></span>`;
     return `<tr><td class="nm">${esc(h.name)}${weekly(h) ? ` (주${h.per})` : ''}</td>${D.map(d => `<td>${cell(d)}</td>`).join('')}<td class="rt">${n ? Math.round(dn / n * 100) + '%' : '-'}</td></tr>`;
   }).join('');
-  const rrow = `<tr><td class="nm">달성률</td>${D.map(d => { const r = d <= t ? dayRate(d) : null; return `<td class="mn">${r == null ? '' : Math.round(r * 100)}</td>`; }).join('')}<td class="rt">${avg}%</td></tr>`;
+  const rrow = `<tr><td class="nm">달성률</td>${D.map(d => { const r = d <= t ? dayRate(d) : null; return `<td class="mn">${isRest(d) ? '휴' : r == null ? '' : Math.round(r * 100)}</td>`; }).join('')}<td class="rt">${avg}%</td></tr>`;
   const hr = hs.map(h => { const [dn, n, u] = hStat(h, past); return { h, r: n ? dn / n : 0, dn, n, u }; }).sort((a, b) => b.r - a.r);
   return `<div class="page rp">
-    <div class="rp-h"><h1>${y}년 ${mo}월 습관 리포트</h1><span>${t} 출력</span></div>
+    <div class="rp-h"><h1>${y}년 ${mo}월 습관 리포트</h1><span>${nextDday() ? `${esc(nextDday().name)} ${ddLabel(nextDday().date)} · ` : ''}${t} 출력</span></div>
     <div class="rp-t"><div>평균 달성률<b>${avg}%</b></div><div>완벽한 날<b>${rates.filter(r => r === 1).length}일</b></div><div>총 달성<b>${total}회</b></div><div>기록한 날<b>${rates.length}일</b></div></div>
     <h4>습관 달성표</h4>
     <table class="hg"><colgroup><col style="width:26mm">${D.map(() => '<col>').join('')}<col style="width:10mm"></colgroup>
@@ -474,17 +621,37 @@ function habitDlg(h) {
   openDlg(`<h3>${n ? '습관 추가' : '습관 편집'}</h3>
     <div class="fld"><span>이름</span><input id="f-name" value="${esc(h.name)}" maxlength="30" placeholder="예: 스트레칭"></div>
     <div class="fld"><span>분류</span>${seg('cat', [['life', '일상'], ['study', '공부']], h.cat)}</div>
-    <div class="fld"><span>기록 방식</span>${seg('type', [['check', '완료'], ['count', '횟수'], ['time', '시간']], h.type)}</div>
-    <div class="fld" id="f-tg"><span>하루 목표</span><div class="inl"><input id="f-target" type="number" inputmode="numeric" min="1" value="${h.type === 'check' ? '' : h.target}" placeholder="${h.type === 'time' ? 30 : 1}"><span id="f-unit"></span></div></div>
+    <div class="fld"><span>기록 방식</span>${seg('type', [['check', '완료'], ['count', '횟수'], ['time', '시간'], ['clock', '시각']], h.type)}</div>
+    <div class="fld" id="f-tg"><span>하루 목표</span><div class="inl"><input id="f-target" type="number" inputmode="numeric" min="1" value="${h.type === 'check' || h.type === 'clock' ? '' : h.target}" placeholder="${h.type === 'time' ? 30 : 1}"><span id="f-unit"></span></div></div>
+    <div class="fld" id="f-tt"><span>목표 시각 (이 시각 이전이면 달성)</span><input id="f-ttime" type="time" value="${hh2(h.type === 'clock' ? h.target : 390)}"></div>
     <div class="fld"><span>빈도</span>${seg('freq', [['days', '요일 지정'], ['week', '주 n회']], weekly(h) ? 'week' : 'days')}</div>
-    <div class="fld" id="f-per"><span>주간 목표</span><div class="inl"><input id="f-pern" type="number" inputmode="numeric" min="1" max="7" value="${h.per || 3}"><span>회 / 주 (월~일)</span></div></div>
-    <div class="fld" id="f-days"><span>요일</span><div class="days">${[1, 2, 3, 4, 5, 6, 0].map(i => `<button type="button" data-act="dtog" data-d="${i}" class="${h.days.includes(i) ? 'on' : ''}">${WD[i]}</button>`).join('')}</div></div>
+    <div class="fld" id="f-per"><span>주간 목표</span><div class="inl"><input id="f-pern" type="number" inputmode="numeric" min="1" max="7" value="${h.per || 3}"><span>회 / 주 (일~토)</span></div></div>
+    <div class="fld" id="f-days"><span>요일</span><div class="days">${WDO.map(i => `<button type="button" data-act="dtog" data-d="${i}" class="${h.days.includes(i) ? 'on' : ''}">${WD[i]}</button>`).join('')}</div></div>
     <div class="dbtns">${n ? '' : `<button class="btn danger" data-act="hdel" data-id="${h.id}">삭제</button>${archived(h) ? `<button class="btn" data-act="hrest" data-id="${h.id}">복원</button>` : `<button class="btn" data-act="harch" data-id="${h.id}">보관</button>`}`}<span></span><button class="btn" data-act="dclose">취소</button><button class="btn pri" data-act="hsave" data-id="${n ? '' : h.id}">저장</button></div>`);
   updForm();
 }
+function valDlg(h, d) {
+  const v = val(h, d), clk = h.type === 'clock';
+  openDlg(`<h3>${esc(h.name)}</h3><p class="sub" style="margin:-.6rem 0 1rem">${tipDate(d)} · ${clk ? `목표 ${hhmm(h.target)} 이전` : `목표 ${h.target}${h.type === 'time' ? '분' : '회'}`}</p>
+    <div class="fld">${clk ? `<input id="f-v" type="time" value="${v > 1 ? hh2(v - 1) : ''}">` : `<input id="f-v" type="number" inputmode="numeric" min="0" value="${v || ''}" placeholder="0">`}</div>
+    <div class="dbtns"><button class="btn danger" data-act="vclear" data-id="${h.id}" data-d="${d}">지우기</button><span></span><button class="btn" data-act="dclose">취소</button><button class="btn pri" data-act="vsave" data-id="${h.id}" data-d="${d}">저장</button></div>`);
+}
+function dayDlg(d) {
+  openDlg(`<h3>${tipDate(d)}</h3><p class="sub" style="margin:-.6rem 0 1rem">휴식일은 달성률과 연속 기록에서 제외됩니다.</p>
+    <div class="dbtns" style="margin-top:0"><button class="btn" data-act="rest" data-d="${d}">${isRest(d) ? '휴식일 해제' : '휴식일 지정'}</button><button class="btn" data-act="goto" data-d="${d}">이 날 보기</button><span></span><button class="btn" data-act="dclose">닫기</button></div>`);
+}
+function ddDlg(x) {
+  const n = !x;
+  x = x || { name: '', date: addD(today(), 30) };
+  openDlg(`<h3>${n ? 'D-day 추가' : 'D-day 편집'}</h3>
+    <div class="fld"><span>이름</span><input id="f-name" value="${esc(x.name)}" maxlength="20" placeholder="예: 수능"></div>
+    <div class="fld"><span>날짜</span><input id="f-date" type="date" value="${x.date}"></div>
+    <div class="dbtns">${n ? '' : `<button class="btn danger" data-act="dddel" data-id="${x.id}">삭제</button>`}<span></span><button class="btn" data-act="dclose">취소</button><button class="btn pri" data-act="ddsave" data-id="${n ? '' : x.id}">저장</button></div>`);
+}
 function updForm() {
   const ty = segVal('type');
-  $('#f-tg').hidden = ty === 'check';
+  $('#f-tg').hidden = ty === 'check' || ty === 'clock';
+  $('#f-tt').hidden = ty !== 'clock';
   $('#f-unit').textContent = ty === 'time' ? '분' : '회';
   const wk = segVal('freq') === 'week';
   $('#f-per').hidden = !wk; $('#f-days').hidden = wk;
@@ -592,7 +759,7 @@ function render() {
   applyPrefs(); hideTip();
   if (today() !== lastToday) { if (cur === lastToday) cur = today(); lastToday = today(); }
   $$('nav a').forEach(a => a.classList.toggle('on', a.dataset.v === view));
-  $('#main').innerHTML = ({ today: vToday, stats: vStats, set: vSet }[view] || vToday)();
+  $('#main').innerHTML = ({ today: vToday, week: vWeek, stats: vStats, set: vSet, habit: vHabit }[view] || vToday)();
 }
 function softRender() {
   const a = document.activeElement;
@@ -601,9 +768,12 @@ function softRender() {
   render();
 }
 let toastT;
-function toast(m) {
-  const t = $('#toast'); t.textContent = m; t.classList.add('on');
-  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2000);
+function toast(m, undo) {
+  const t = $('#toast');
+  t.innerHTML = esc(m) + (undo ? '<button data-act="undo">되돌리기</button>' : '');
+  t.classList.toggle('act', !!undo); t.classList.add('on');
+  if (!undo) undoFn = null;
+  clearTimeout(toastT); toastT = setTimeout(() => { t.classList.remove('on'); undoFn = null; }, undo ? 5000 : 2000);
 }
 
 /* ========== events ========== */
@@ -612,13 +782,47 @@ document.addEventListener('click', e => {
   const a = b.dataset.act, id = b.dataset.id;
   const h = id && S.habits.find(x => x.id === id);
   switch (a) {
-    case 'tog': setVal(h, cur, done(h, cur) ? 0 : 1); break;
+    case 'tog': setValU(h, cur, done(h, cur) ? 0 : 1); break;
     case 'inc': {
       const st = h.type === 'time' ? (h.target >= 30 ? 10 : 5) : 1;
-      setVal(h, cur, val(h, cur) + st * +b.dataset.n); break;
+      setValU(h, cur, Math.max(0, val(h, cur) + st * +b.dataset.n)); break;
+    }
+    case 'clnow': { const n = new Date(); setValU(h, cur, n.getHours() * 60 + n.getMinutes() + 1); break; }
+    case 'vedit': valDlg(h, b.dataset.d); break;
+    case 'wcell': { const d = b.dataset.d; if (h.type === 'check') setValU(h, d, done(h, d) ? 0 : 1); else valDlg(h, d); break; }
+    case 'vsave': {
+      const x = $('#f-v').value, nv = h.type === 'clock' ? (x ? toMin(x) + 1 : 0) : Math.max(0, Math.round(+x || 0));
+      dlg.close(); setValU(h, b.dataset.d, nv); break;
+    }
+    case 'vclear': dlg.close(); setValU(h, b.dataset.d, 0); break;
+    case 'wday': dayDlg(b.dataset.d); break;
+    case 'wk': wkCur = +b.dataset.n ? addD(wkCur, 7 * +b.dataset.n) : wkStart(today()); render(); break;
+    case 'rest': {
+      const d = b.dataset.d, prev = isRest(d);
+      if (dlg.open) dlg.close();
+      setRest(d, !prev);
+      offerUndo(prev ? `${tipDate(d)} 휴식일 해제` : `${tipDate(d)} 휴식일 · 통계에서 제외`, () => setRest(d, prev));
+      break;
+    }
+    case 'undo': if (undoFn) { const f = undoFn; undoFn = null; f(); toast('되돌렸습니다'); } break;
+    case 'hopen': location.hash = 'h=' + id; break;
+    case 'back': if (history.length > 1) history.back(); else location.hash = 'today'; break;
+    case 'ddedit': ddDlg((S.dday || []).find(x => x.id === id)); break;
+    case 'ddsave': {
+      const name = $('#f-name').value.trim(), date = $('#f-date').value;
+      if (!name || !date) return toast('이름과 날짜를 입력하세요');
+      S.dday = S.dday || [];
+      const x = S.dday.find(y => y.id === id);
+      if (x) Object.assign(x, { name, date, u: now() }); else S.dday.push({ id: uid(), name, date, u: now() });
+      dlg.close(); commit(); break;
+    }
+    case 'dddel': {
+      const x = S.dday.find(y => y.id === id);
+      if (confirm(`'${x.name}' D-day를 삭제할까요?`)) { x.del = true; x.u = now(); dlg.close(); commit(); }
+      break;
     }
     case 'day': cur = +b.dataset.n ? addD(cur, +b.dataset.n) : today(); render(); break;
-    case 'goto': cur = b.dataset.d; if (view === 'today') render(); else location.hash = 'today'; break;
+    case 'goto': cur = b.dataset.d; if (dlg.open) dlg.close(); if (view === 'today') render(); else location.hash = 'today'; break;
     case 'mon': { const d = pd(ym + '-01'); d.setMonth(d.getMonth() + +b.dataset.n); ym = ds(d).slice(0, 7); render(); break; }
     case 'seg': {
       const p = b.parentElement;
@@ -633,7 +837,7 @@ document.addEventListener('click', e => {
     case 'hsave': {
       const name = $('#f-name').value.trim(), type = segVal('type');
       const days = $$('#dlg .days .on').map(x => +x.dataset.d);
-      const target = type === 'check' ? 1 : Math.max(1, Math.round(+$('#f-target').value || (type === 'time' ? 30 : 1)));
+      const target = type === 'check' ? 1 : type === 'clock' ? toMin($('#f-ttime').value || '06:30') : Math.max(1, Math.round(+$('#f-target').value || (type === 'time' ? 30 : 1)));
       if (!name) return toast('이름을 입력하세요');
       const freq = segVal('freq'), per = Math.max(1, Math.min(7, Math.round(+$('#f-pern').value || 1)));
       if (freq === 'days' && !days.length) return toast('요일을 하나 이상 고르세요');
@@ -642,13 +846,13 @@ document.addEventListener('click', e => {
       else S.habits.push({ id: uid(), c: today(), o: Math.max(0, ...S.habits.map(x => x.o)) + 1, ...o });
       dlg.close(); commit(); break;
     }
-    case 'hdel': if (confirm(`'${h.name}' 습관을 삭제할까요?\n지난 기록도 통계에서 사라집니다. 기록을 남기려면 '보관'을 사용하세요.`)) { h.del = true; h.u = now(); dlg.close(); commit(); } break;
-    case 'harch': h.off = [...(h.off || []), [today(), null]]; h.u = now(); dlg.close(); commit(); toast(`'${h.name}' 보관됨 · 지난 기록은 통계에 남습니다`); break;
-    case 'hrest': {
+    case 'hdel': if (confirm(`'${h.name}' 습관을 삭제할까요?\n지난 기록도 통계에서 사라집니다. 기록을 남기려면 '보관'을 사용하세요.`)) habitU(h, `'${h.name}' 삭제됨`, () => { h.del = true; h.u = now(); dlg.close(); commit(); }); break;
+    case 'harch': habitU(h, `'${h.name}' 보관됨 · 지난 기록은 통계에 남습니다`, () => { h.off = [...(h.off || []), [today(), null]]; h.u = now(); dlg.close(); commit(); }); break;
+    case 'hrest': habitU(h, `'${h.name}' 복원됨`, () => {
       const r = h.off.find(x => !x[1]); r[1] = today();
       h.off = h.off.filter(x => x[0] !== x[1]); h.u = now();
-      if (dlg.open) dlg.close(); commit(); toast(`'${h.name}' 복원됨`); break;
-    }
+      if (dlg.open) dlg.close(); commit();
+    }); break;
     case 'hup': case 'hdn': {
       const l = habits().filter(x => !archived(x)), i = l.indexOf(h), j = a === 'hup' ? i - 1 : i + 1;
       if (l[j]) { [h.o, l[j].o] = [l[j].o, h.o]; h.u = l[j].u = now(); commit(); }
@@ -679,6 +883,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.pref) { setPref({ [t.dataset.pref]: prefVal(t) }); return; }
+  if (t.dataset.clock) { const h = S.habits.find(x => x.id === t.dataset.clock); setValU(h, cur, t.value ? toMin(t.value) + 1 : 0); return; }
   if (t.id === 'fontfile' && t.files[0]) { setCustomFont(t.files[0]); t.value = ''; return; }
   if (t.id === 'file' && t.files[0]) {
     t.files[0].text().then(txt => {
@@ -700,7 +905,7 @@ async function exportData() {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
-addEventListener('hashchange', () => { view = location.hash.slice(1) || 'today'; render(); scrollTo(0, 0); });
+addEventListener('hashchange', () => { parseHash(); render(); scrollTo(0, 0); });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { softRender(); sync(); }
   else if (syncT) sync();
