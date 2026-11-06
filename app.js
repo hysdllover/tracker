@@ -584,7 +584,7 @@ function vSet() {
     <div class="btns"><button class="btn" data-act="export">내보내기</button><button class="btn" data-act="import">가져오기</button></div>
     <input type="file" id="file" accept="application/json,.json" hidden></div>
   <h2>리포트</h2><div class="card"><div class="btns" style="margin:0"><button class="btn" data-act="report">이번 달 A4 리포트</button></div></div>
-  <p class="sub" style="text-align:center;margin-top:28px">습관 트래커 v1.6</p>
+  <p class="sub" style="text-align:center;margin-top:28px">습관 트래커 v1.7</p>
   </div></div>`;
 }
 
@@ -936,4 +936,13 @@ addEventListener('online', () => sync());
 render();
 loadCustomFont();
 sync();
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// 새 버전이 배포되면 받아서 한 번 다시 불러옴
+if ('serviceWorker' in navigator) {
+  const hadCtl = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => {
+    r.update();
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') r.update(); });
+  }).catch(() => {});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadCtl && !reloaded) { reloaded = true; location.reload(); } });
+}
