@@ -64,7 +64,7 @@ function seed() {
     seed: true,
     habits: [
       H('기상', 'life', 'check', 1, 1), H('운동', 'life', 'check', 1, 2, { freq: 'week', per: 3 }),
-      H('물 마시기', 'life', 'count', 8, 3), H('독서', 'life', 'time', 20, 4),
+      H('물 마시기', 'life', 'count', 56, 3, { freq: 'week' }), H('독서', 'life', 'time', 20, 4),
       H('공부', 'study', 'time', 120, 5), H('복습', 'study', 'check', 1, 6),
     ],
     subjects: [],
@@ -74,6 +74,8 @@ function seed() {
 let S = ls(KEY) || seed();
 // 이전 기본 샌드색 → 슬레이트로 이전
 if (S.prefs?.study === '#B5A88C') { S.prefs.study = '#5F6F80'; S.prefs.u = Date.now(); }
+// 횟수 습관은 주간 합계만 사용: 하루 목표였던 습관은 '하루 목표 × 요일 수'로 이전
+(S.habits || []).forEach(h => { if (h.type === 'count' && h.freq !== 'week') { h.target = h.target * (h.days?.length || 7); h.freq = 'week'; h.days = [0, 1, 2, 3, 4, 5, 6]; h.u = Date.now(); } });
 let cfg = ls(CFG) || {};
 let memo = null;
 
@@ -582,7 +584,7 @@ function vSet() {
     <div class="btns"><button class="btn" data-act="export">내보내기</button><button class="btn" data-act="import">가져오기</button></div>
     <input type="file" id="file" accept="application/json,.json" hidden></div>
   <h2>리포트</h2><div class="card"><div class="btns" style="margin:0"><button class="btn" data-act="report">이번 달 A4 리포트</button></div></div>
-  <p class="sub" style="text-align:center;margin-top:28px">습관 트래커 v1.5</p>
+  <p class="sub" style="text-align:center;margin-top:28px">습관 트래커 v1.6</p>
   </div></div>`;
 }
 
@@ -639,7 +641,7 @@ function habitDlg(h) {
     <div class="fld"><span>기록 방식</span>${seg('type', [['check', '완료'], ['count', '횟수'], ['time', '시간'], ['clock', '시각']], h.type)}</div>
     <div class="fld" id="f-tg"><span>하루 목표</span><div class="inl"><input id="f-target" type="number" inputmode="numeric" min="1" value="${h.type === 'check' || h.type === 'clock' ? '' : h.target}" placeholder="${h.type === 'time' ? 30 : 1}"><span id="f-unit"></span></div></div>
     <div class="fld" id="f-tt"><span>목표 시각 (이 시각 이전이면 달성)</span><input id="f-ttime" type="time" value="${hh2(h.type === 'clock' ? h.target : 390)}"></div>
-    <div class="fld"><span>빈도</span>${seg('freq', [['days', '요일 지정'], ['week', '주 n회']], weekly(h) ? 'week' : 'days')}</div>
+    <div class="fld" id="f-freq"><span>빈도</span>${seg('freq', [['days', '요일 지정'], ['week', '주 n회']], weekly(h) ? 'week' : 'days')}</div>
     <div class="fld" id="f-per"><span>주간 목표</span><div class="inl"><input id="f-pern" type="number" inputmode="numeric" min="1" max="7" value="${h.per || 3}"><span id="f-perunit">회 / 주 (일~토)</span></div></div>
     <div class="fld" id="f-wt"><span>주간 목표 (일~토 합계)</span><div class="inl"><input id="f-wtn" type="number" inputmode="numeric" min="1" value="${wkAmt(h) ? h.target : h.type === 'count' || h.type === 'time' ? h.target * 5 : ''}" placeholder="${h.type === 'time' ? 600 : 10}"><span id="f-wtunit"></span></div><small style="display:block;margin-top:.35rem">하루 목표 없이 이번 주 합계로 판정합니다. 하루에 몰아서 해도 인정됩니다.</small></div>
     <div class="fld" id="f-days"><span>요일</span><div class="days">${WDO.map(i => `<button type="button" data-act="dtog" data-d="${i}" class="${h.days.includes(i) ? 'on' : ''}">${WD[i]}</button>`).join('')}</div></div>
@@ -665,7 +667,8 @@ function ddDlg(x) {
     <div class="dbtns">${n ? '' : `<button class="btn danger" data-act="dddel" data-id="${x.id}">삭제</button>`}<span></span><button class="btn" data-act="dclose">취소</button><button class="btn pri" data-act="ddsave" data-id="${n ? '' : x.id}">저장</button></div>`);
 }
 function updForm() {
-  const ty = segVal('type'), wk = segVal('freq') === 'week', amt = ty === 'count' || ty === 'time';
+  const ty = segVal('type'), cnt = ty === 'count', wk = cnt || segVal('freq') === 'week', amt = ty === 'count' || ty === 'time';
+  $('#f-freq').hidden = cnt;
   $('#f-tg').hidden = !amt || wk;
   $('#f-tt').hidden = ty !== 'clock';
   $('#f-unit').textContent = $('#f-wtunit').textContent = ty === 'time' ? '분' : '회';
@@ -853,7 +856,7 @@ document.addEventListener('click', e => {
     case 'hsave': {
       const name = $('#f-name').value.trim(), type = segVal('type');
       const days = $$('#dlg .days .on').map(x => +x.dataset.d);
-      const freq = segVal('freq'), amt = (type === 'count' || type === 'time') && freq === 'week';
+      const freq = type === 'count' ? 'week' : segVal('freq'), amt = (type === 'count' || type === 'time') && freq === 'week';
       const target = type === 'check' ? 1 : type === 'clock' ? toMin($('#f-ttime').value || '06:30')
         : amt ? Math.max(1, Math.round(+$('#f-wtn').value || (type === 'time' ? 600 : 10))) : Math.max(1, Math.round(+$('#f-target').value || (type === 'time' ? 30 : 1)));
       if (!name) return toast('이름을 입력하세요');
