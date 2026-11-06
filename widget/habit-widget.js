@@ -4,7 +4,7 @@
 
 const APP = 'https://hysdllover.github.io/tracker/';
 const FILE = 'habit-tracker.json';
-const K_TOKEN = 'ht_token', K_GIST = 'ht_gist';
+const K_TOKEN = 'ht_token', K_GIST = 'ht_gist', K_ETAG = 'ht_etag';
 const CACHE = FileManager.local().joinPath(FileManager.local().documentsDirectory(), 'ht-cache.json');
 const WD = '일월화수목금토';
 
@@ -69,10 +69,16 @@ async function loadData() {
       if (!f) throw new Error('동기화 Gist 없음');
       id = f.id; Keychain.set(K_GIST, id);
     }
-    let g;
-    try { g = await gh('/gists/' + id, token); }
-    catch (e) { Keychain.remove(K_GIST); throw e; }
-    const f = g.files[FILE];
+    // 조건부 요청: 바뀐 게 없으면 304 (호출 한도에서 차감되지 않음) → 저장본 사용
+    const rq = new Request('https://api.github.com/gists/' + id);
+    rq.headers = { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', ...(fm.fileExists(CACHE) && Keychain.contains(K_ETAG) ? { 'If-None-Match': Keychain.get(K_ETAG) } : {}) };
+    const body = await rq.loadString(), code = rq.response ? rq.response.statusCode : 200;
+    if (code === 304) return { S: cached() };
+    if (code === 404) { Keychain.remove(K_GIST); throw new Error('Gist 없음'); }
+    if (code >= 400) throw new Error(code === 401 ? '토큰 오류' : 'GitHub ' + code);
+    const et = rq.response && (rq.response.headers.ETag || rq.response.headers.etag);
+    if (et) Keychain.set(K_ETAG, et);
+    const g = JSON.parse(body), f = g.files[FILE];
     const txt = f.truncated ? await new Request(f.raw_url).loadString() : f.content;
     fm.writeString(CACHE, txt);
     return { S: JSON.parse(txt) };

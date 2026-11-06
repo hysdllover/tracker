@@ -204,55 +204,90 @@ function merge(a, b) {
     prefs: (b.prefs?.u || 0) > (a.prefs?.u || 0) ? b.prefs : a.prefs,
   };
 }
-let syncing = false, syncT = null, syncMsg = '';
-function schedSync() { if (!cfg.token) return; clearTimeout(syncT); syncT = setTimeout(sync, 3000); }
+let syncing = false, syncT = null, syncMsg = '', syncAgain = false, localRev = 0;
+const SYNC_DELAY = 15000, SYNC_GAP = 60000;
+// 로컬 변경이 있으면 표시 (앱을 닫아도 유지) → 변경이 없을 때는 업로드하지 않음
+function schedSync() {
+  if (!cfg.token) return;
+  localRev++;
+  if (!cfg.dirty) { cfg.dirty = true; ls(CFG, cfg); }
+  clearTimeout(syncT); syncT = setTimeout(() => sync(true), SYNC_DELAY); // 15초 안의 변경은 한 번에 묶어서 업로드
+}
 function setSync(m) { syncMsg = m; const e = $('#syncmsg'); if (e) e.textContent = m; }
-async function gh(path, opt = {}) {
+async function gh(path, opt = {}, etag) {
   const r = await fetch('https://api.github.com' + path, {
     ...opt, cache: 'no-store',
-    headers: { Authorization: 'Bearer ' + cfg.token, Accept: 'application/vnd.github+json', ...(opt.body ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { Authorization: 'Bearer ' + cfg.token, Accept: 'application/vnd.github+json', ...(opt.body ? { 'Content-Type': 'application/json' } : {}), ...(etag ? { 'If-None-Match': etag } : {}) },
   });
-  if (!r.ok) throw new Error(r.status === 401 ? '토큰이 유효하지 않습니다' : r.status === 404 ? '404' : 'GitHub ' + r.status);
-  return r.json();
+  const rl = r.headers.get('x-ratelimit-remaining');
+  if (rl != null) cfg.rl = [+rl, +(r.headers.get('x-ratelimit-limit') || 5000)];
+  if (r.status === 304) return { status: 304 };
+  if (!r.ok) throw new Error(r.status === 401 ? '토큰이 유효하지 않습니다' : r.status === 404 ? '404' : r.status === 403 ? '호출 한도 초과 · 잠시 후 다시 시도' : 'GitHub ' + r.status);
+  return { status: r.status, etag: r.headers.get('etag'), json: await r.json() };
 }
+// 조건부 요청: 마지막 동기화 이후 Gist가 그대로면 304 (호출 한도에서 차감되지 않음)
 async function readGist(id) {
-  const g = await gh('/gists/' + id), f = g.files?.[FILE];
-  if (!f) return null;
+  const r = await gh('/gists/' + id, {}, cfg.etag);
+  if (r.status === 304) return { same: true };
+  const f = r.json.files?.[FILE];
+  if (!f) return { data: null, etag: r.etag };
   const c = f.truncated ? await (await fetch(f.raw_url, { cache: 'no-store' })).text() : f.content;
-  return JSON.parse(c);
+  return { data: JSON.parse(c), etag: r.etag };
 }
-async function sync() {
-  if (!cfg.token || syncing) return;
+async function sync(force) {
+  if (!cfg.token) return;
+  if (syncing) { syncAgain = true; return; }
   if (!navigator.onLine) return setSync('오프라인 · 연결되면 동기화합니다');
+  // 바뀐 게 없고 1분 안에 확인했으면 건너뜀
+  if (!force && !cfg.dirty && cfg.last && now() - cfg.last < SYNC_GAP) return;
   syncing = true; clearTimeout(syncT); setSync('동기화 중…');
+  const rev = localRev;
+  let ok = false;
   try {
-    let remote = null;
+    let remote = null, same = false;
     if (!cfg.gist) {
-      const list = await gh('/gists?per_page=100');
-      const f = list.find(g => g.files && g.files[FILE]);
-      if (f) { cfg.gist = f.id; ls(CFG, cfg); }
+      const f = (await gh('/gists?per_page=100')).json.find(g => g.files && g.files[FILE]);
+      if (f) { cfg.gist = f.id; cfg.etag = null; ls(CFG, cfg); }
     }
     if (cfg.gist) {
-      try { remote = await readGist(cfg.gist); }
-      catch (e) { if (e.message === '404') { cfg.gist = null; ls(CFG, cfg); } else throw e; }
+      try { const r = await readGist(cfg.gist); if (r.same) same = true; else { remote = r.data; cfg.etag = r.etag; } }
+      catch (e) { if (e.message === '404') { cfg.gist = null; cfg.etag = null; ls(CFG, cfg); } else throw e; }
     }
-    const merged = remote ? (S.seed ? remote : merge(S, remote)) : merge(S, {});
-    const out = JSON.stringify(merged);
-    if (!cfg.gist) {
-      const g = await gh('/gists', { method: 'POST', body: JSON.stringify({ description: DESC, public: false, files: { [FILE]: { content: out } } }) });
-      cfg.gist = g.id;
-    } else if (out !== JSON.stringify(remote)) {
-      await gh('/gists/' + cfg.gist, { method: 'PATCH', body: JSON.stringify({ files: { [FILE]: { content: out } } }) });
+    let changed = false;
+    if (same) {
+      // 원격은 그대로: 로컬 변경이 있을 때만 업로드
+      if (cfg.dirty) {
+        const r = await gh('/gists/' + cfg.gist, { method: 'PATCH', body: JSON.stringify({ files: { [FILE]: { content: JSON.stringify(merge(S, {})) } } }) });
+        cfg.etag = r.etag;
+      }
+    } else {
+      const merged = remote ? (S.seed ? remote : merge(S, remote)) : merge(S, {});
+      const out = JSON.stringify(merged);
+      if (!cfg.gist) {
+        const r = await gh('/gists', { method: 'POST', body: JSON.stringify({ description: DESC, public: false, files: { [FILE]: { content: out } } }) });
+        cfg.gist = r.json.id; cfg.etag = r.etag;
+      } else if (out !== JSON.stringify(remote)) {
+        const r = await gh('/gists/' + cfg.gist, { method: 'PATCH', body: JSON.stringify({ files: { [FILE]: { content: out } } }) });
+        cfg.etag = r.etag;
+      }
+      changed = !!remote;
+      S = S.seed ? merged : merge(S, merged); memo = null;
+      ls(KEY, S);
     }
-    S = S.seed ? merged : merge(S, merged); memo = null;
-    ls(KEY, S);
-    cfg.last = now(); ls(CFG, cfg);
-    setSync('동기화 완료 · ' + hm(new Date()));
-    softRender();
+    cfg.last = now();
+    if (localRev === rev) cfg.dirty = false; // 동기화 중에 생긴 변경은 다음 번에
+    ls(CFG, cfg);
+    setSync(`${same && !changed ? '최신 상태' : '동기화 완료'} · ${hm(new Date())}`);
+    if (changed) softRender();
+    ok = true;
   } catch (e) {
+    ls(CFG, cfg);
     setSync('동기화 실패 · ' + e.message);
   }
   syncing = false;
+  // 성공했고 그 사이 변경이 생겼을 때만 다시 예약 (실패 시 반복 호출하지 않음)
+  syncAgain = false;
+  if (ok && cfg.dirty) { clearTimeout(syncT); syncT = setTimeout(() => sync(true), SYNC_DELAY); }
 }
 
 /* ========== views ========== */
@@ -575,6 +610,8 @@ function vSet() {
   <h2>동기화 · GitHub Gist</h2><div class="card">${cfg.token ? `
     <div class="kv"><span>상태</span><span id="syncmsg">${esc(syncMsg || '연결됨')}</span></div>
     <div class="kv"><span>Gist</span><span>${cfg.gist ? cfg.gist.slice(0, 10) + '…' : '-'}</span></div>
+    <div class="kv"><span>대기 중인 변경</span><span>${cfg.dirty ? '있음 · 15초 안에 업로드' : '없음'}</span></div>
+    <div class="kv"><span>남은 API 호출</span><span>${cfg.rl ? `${cfg.rl[0].toLocaleString()} / ${cfg.rl[1].toLocaleString()} (1시간)` : '-'}</span></div>
     <div class="kv"><span>마지막 동기화</span><span>${cfg.last ? new Date(cfg.last).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}</span></div>
     <div class="btns"><button class="btn pri" data-act="sync">지금 동기화</button><button class="btn danger" data-act="untok">연결 해제</button></div>` : `
     <p class="sub" style="margin:0 0 10px">gist 권한이 있는 GitHub 토큰을 입력하세요. 아이폰과 아이패드에 같은 토큰을 넣으면 자동으로 같은 비공개 Gist를 사용합니다.</p>
@@ -584,7 +621,7 @@ function vSet() {
     <div class="btns"><button class="btn" data-act="export">내보내기</button><button class="btn" data-act="import">가져오기</button></div>
     <input type="file" id="file" accept="application/json,.json" hidden></div>
   <h2>리포트</h2><div class="card"><div class="btns" style="margin:0"><button class="btn" data-act="report">이번 달 A4 리포트</button></div></div>
-  <p class="sub" style="text-align:center;margin-top:28px">습관 트래커 v1.7</p>
+  <p class="sub" style="text-align:center;margin-top:28px">습관 트래커 v1.8</p>
   </div></div>`;
 }
 
@@ -881,10 +918,10 @@ document.addEventListener('click', e => {
     }
     case 'tok': {
       const v = $('#tok').value.trim(); if (!v) return toast('토큰을 입력하세요');
-      cfg = { token: v }; ls(CFG, cfg); render(); sync(); break;
+      cfg = { token: v }; ls(CFG, cfg); render(); sync(true); break;
     }
     case 'untok': if (confirm('동기화를 해제할까요? 이 기기의 데이터는 유지됩니다.')) { cfg = {}; syncMsg = ''; ls(CFG, cfg); render(); } break;
-    case 'sync': sync(); break;
+    case 'sync': sync(true); break;
     case 'fontpick': $('#fontfile').click(); break;
     case 'fontdel': if (confirm('내 폰트 파일을 삭제할까요?')) delCustomFont(); break;
     case 'theme': { const th = THEMES[+b.dataset.i]; setPref({ life: th[1], study: th[2], accent: th[3] }); break; }
@@ -929,9 +966,9 @@ async function exportData() {
 addEventListener('hashchange', () => { parseHash(); render(); scrollTo(0, 0); });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { softRender(); sync(); }
-  else if (syncT) sync();
+  else if (cfg.dirty) sync(true); // 앱을 떠날 때 남은 변경만 바로 업로드
 });
-addEventListener('online', () => sync());
+addEventListener('online', () => { if (cfg.dirty) sync(true); });
 
 render();
 loadCustomFont();
