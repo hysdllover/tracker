@@ -313,3 +313,4 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:1.3rem;hei
 .wt tfoot td{font-size:.72rem;color:var(--sub);padding:.5rem 0;border-top:1px solid var(--line);border-bottom:0}
 .wt tfoot .nm{cursor:default}
 @media (min-width:900px){.wt .nm{width:10rem}.wc{max-width:3.6rem;height:2.7rem;font-size:.8rem}}
+.wt .sm small{display:block;font-size:.66rem;line-height:1.2}

@@ -85,12 +85,18 @@ function val(h, d) {
 }
 const goal = h => h.type === 'check' ? 1 : h.target;
 // 시각(clock) 습관: 값 = 분+1 (0은 미기록), 목표 시각 이전이면 달성
-const done = (h, d) => { const v = val(h, d); return h.type === 'clock' ? v > 0 && v - 1 <= h.target : v >= goal(h); };
+// 주간 합계형: 주 n회 + 횟수/시간 습관은 하루 목표 없이 주간 합계(h.target)로 판정
+const wkAmt = h => h.freq === 'week' && (h.type === 'count' || h.type === 'time');
+const unitOf = h => h.type === 'time' ? '분' : '회';
+const fmtAmt = (h, v) => h.type === 'time' ? (v >= 60 ? fmtMin(v) : `${Math.round(v)}분`) : `${Math.round(v)}회`;
+const wkText = h => wkAmt(h) ? `주 ${fmtAmt(h, h.target)}` : `주 ${h.per}회`;
+const done = (h, d) => { const v = val(h, d); return h.type === 'clock' ? v > 0 && v - 1 <= h.target : wkAmt(h) ? v > 0 : v >= goal(h); };
 function fmtVal(h, d) {
   const v = val(h, d);
   if (h.type === 'check') return done(h, d) ? '완료' : '미완료';
   if (h.type === 'clock') return v > 1 ? hhmm(v - 1) : v === 1 ? '완료' : '미기록';
-  return `${Math.round(v)}/${h.target}${h.type === 'time' ? '분' : '회'}`;
+  if (wkAmt(h)) return `${Math.round(v)}${unitOf(h)}`;
+  return `${Math.round(v)}/${h.target}${unitOf(h)}`;
 }
 const isRest = d => S.rest?.[d]?.[0] === 1;
 function setRest(d, on) { S.rest = S.rest || {}; S.rest[d] = [on ? 1 : 0, now()]; commit(); }
@@ -108,8 +114,11 @@ const shown = (h, d) => alive(h, d) && (weekly(h) || h.days.includes(pd(d).getDa
 // 달성 횟수 집계 대상 (주 n회 습관은 한 날도 포함)
 const counts = (h, d) => sched(h, d) || (weekly(h) && alive(h, d));
 const wkStart = d => addD(d, -pd(d).getDay());
-function wkDone(h, d) { const s = wkStart(d); let n = 0; for (let i = 0; i < 7; i++) { const x = addD(s, i); if (alive(h, x) && done(h, x)) n++; } return n; }
-const wkMet = (h, d) => wkDone(h, d) >= (h.per || 1);
+// 주간 진행: 합계형은 값의 합, 그 외는 달성한 날 수
+function wkDone(h, d) { const s = wkStart(d); let n = 0; for (let i = 0; i < 7; i++) { const x = addD(s, i); if (alive(h, x)) n += wkAmt(h) ? val(h, x) : done(h, x) ? 1 : 0; } return n; }
+const wkGoal = h => wkAmt(h) ? h.target : (h.per || 1);
+const wkMet = (h, d) => wkDone(h, d) >= wkGoal(h);
+const wkProg = (h, d) => wkAmt(h) ? `${fmtAmt(h, wkDone(h, d))} / ${fmtAmt(h, h.target)}` : `${wkDone(h, d)}/${h.per}`;
 const inRange = (h, D) => D.some(d => alive(h, d));
 const sunit = h => weekly(h) ? '주' : '일';
 // 기간 D의 [달성, 대상, 단위]: 일일 습관은 날짜, 주 n회 습관은 주 단위 (진행 중인 주는 달성했을 때만 포함)
@@ -257,16 +266,16 @@ function row(h, d) {
   const unit = h.type === 'time' ? '분' : h.type === 'count' ? '회' : '';
   const meta = [];
   if (h.type === 'clock') meta.push(`목표 ${hhmm(h.target)} 이전`);
-  else if (h.type !== 'check') meta.push(`목표 ${t}${unit}`);
-  if (weekly(h)) { const c = wkDone(h, d); meta.push(`이번 주 ${c}/${h.per}${c >= h.per ? ' 달성' : ''}`); }
+  else if (h.type !== 'check' && !wkAmt(h)) meta.push(`목표 ${t}${unit}`);
+  if (weekly(h)) meta.push(`이번 주 ${wkProg(h, d)}${wkMet(h, d) ? ' 달성' : ''}`);
   else if (h.days.length < 7) meta.push(WDO.filter(i => h.days.includes(i)).map(i => WD[i]).join(''));
   if (st) meta.push(`${st}${sunit(h)} 연속`);
   const w7 = [...Array(7)].map((_, i) => addD(d, i - 6)).map(x => `<i class="${weekly(h) ? (!alive(h, x) ? 'n' : done(h, x) ? 'y' : val(h, x) > 0 ? 'p' : '') : !sched(h, x) ? 'n' : done(h, x) ? 'y' : val(h, x) > 0 ? 'p' : ''}"></i>`).join('');
   let ctl;
   if (h.type === 'check') ctl = `<button class="chk ${ok ? 'on' : ''}" data-act="tog" data-id="${h.id}" aria-label="완료">${I.check}</button>`;
   else if (h.type === 'clock') ctl = `<div class="step">${v > 1 ? '' : `<button class="btn sm" data-act="clnow" data-id="${h.id}">지금</button>`}<input type="time" class="tin" data-clock="${h.id}" value="${v > 1 ? hh2(v - 1) : ''}" aria-label="시각"></div>`;
-  else ctl = `<div class="step"><button class="ib" data-act="inc" data-id="${h.id}" data-n="-1">${I.minus}</button><button class="val" data-act="vedit" data-id="${h.id}" data-d="${d}">${v}<small>/${t}${unit}</small></button><button class="ib" data-act="inc" data-id="${h.id}" data-n="1">${I.plus}</button></div>`;
-  return `<div class="hrow ${h.cat} ${ok ? 'ok' : ''}"><div class="hinfo" data-act="hopen" data-id="${h.id}"><div class="hname">${esc(h.name)}</div><div class="hmeta"><span class="wd7">${w7}</span><span>${meta.join(' · ') || '매일'}</span></div></div>${ctl}${h.type === 'count' || h.type === 'time' ? `<i class="pbar" style="width:${Math.min(1, v / t) * 100}%"></i>` : ''}</div>`;
+  else ctl = `<div class="step"><button class="ib" data-act="inc" data-id="${h.id}" data-n="-1">${I.minus}</button><button class="val" data-act="vedit" data-id="${h.id}" data-d="${d}">${v}<small>${wkAmt(h) ? unit : `/${t}${unit}`}</small></button><button class="ib" data-act="inc" data-id="${h.id}" data-n="1">${I.plus}</button></div>`;
+  return `<div class="hrow ${h.cat} ${ok ? 'ok' : ''}"><div class="hinfo" data-act="hopen" data-id="${h.id}"><div class="hname">${esc(h.name)}</div><div class="hmeta"><span class="wd7">${w7}</span><span>${meta.join(' · ') || '매일'}</span></div></div>${ctl}${h.type === 'count' || h.type === 'time' ? `<i class="pbar" style="width:${Math.min(1, wkAmt(h) ? wkDone(h, d) / h.target : v / t) * 100}%"></i>` : ''}</div>`;
 }
 const lvl = r => r == null ? 'na' : r === 0 ? '' : r < .34 ? 'l1' : r < .67 ? 'l2' : r < 1 ? 'l3' : 'l4';
 const tipDate = d => `${+d.slice(5, 7)}/${+d.slice(8)} (${WD[pd(d).getDay()]})`;
@@ -314,7 +323,7 @@ function habitRank(D) {
     return { h, r: n ? dn / n : null, dn, n, u, st: streak(h) };
   }).sort((a, b) => (b.r ?? -1) - (a.r ?? -1));
   if (!rows.length) return '<p class="empty">습관이 없습니다.</p>';
-  return `<table class="tb"><thead><tr><th>습관</th><th class="bc wide">달성률</th><th class="num"></th><th class="num">연속</th></tr></thead><tbody>${rows.map(x => `<tr class="${x.h.cat}" data-act="hopen" data-id="${x.h.id}" data-tip="${esc(x.h.name)} · ${x.dn}/${x.n}${x.u}${weekly(x.h) ? ` (주 ${x.h.per}회 목표)` : ''}"><td>${esc(x.h.name)}${archived(x.h) ? ' <small>보관</small>' : ''}</td><td class="bc wide"><div class="ibar"><i style="width:${(x.r || 0) * 100}%"></i></div></td><td class="num">${x.r == null ? '-' : pct(x.r)}</td><td class="num sub">${x.st}${x.u}</td></tr>`).join('')}</tbody></table>`;
+  return `<table class="tb"><thead><tr><th>습관</th><th class="bc wide">달성률</th><th class="num"></th><th class="num">연속</th></tr></thead><tbody>${rows.map(x => `<tr class="${x.h.cat}" data-act="hopen" data-id="${x.h.id}" data-tip="${esc(x.h.name)} · ${x.dn}/${x.n}${x.u}${weekly(x.h) ? ` (${wkText(x.h)} 목표)` : ''}"><td>${esc(x.h.name)}${archived(x.h) ? ' <small>보관</small>' : ''}</td><td class="bc wide"><div class="ibar"><i style="width:${(x.r || 0) * 100}%"></i></div></td><td class="num">${x.r == null ? '-' : pct(x.r)}</td><td class="num sub">${x.st}${x.u}</td></tr>`).join('')}</tbody></table>`;
 }
 
 /* 습관 × 날짜 매트릭스 */
@@ -324,7 +333,7 @@ function matrix(D) {
   const head = D.map((d, i) => `<th>${i % 7 === 0 ? +d.slice(8) : ''}</th>`).join('');
   const rows = hs.map(h => {
     const [dn, n] = hStat(h, D);
-    return `<tr class="${h.cat}"><td class="nm" data-act="hopen" data-id="${h.id}">${esc(h.name)}${weekly(h) ? ` <small>주${h.per}</small>` : ''}</td>${D.map(d => {
+    return `<tr class="${h.cat}"><td class="nm" data-act="hopen" data-id="${h.id}">${esc(h.name)}${weekly(h) ? ` <small>${wkText(h)}</small>` : ''}</td>${D.map(d => {
       if (!weekly(h) && isRest(d) && alive(h, d) && h.days.includes(pd(d).getDay())) return `<td><i class="rs" data-tip="${tipDate(d)} · 휴식일"></i></td>`;
       if (weekly(h) ? !alive(h, d) : !sched(h, d)) return '<td><i class="n"></i></td>';
       if (d > t) return '<td><i class="f"></i></td>';
@@ -408,17 +417,17 @@ function vWeek() {
   const cell = (h, d) => {
     if (!alive(h, d) || (!weekly(h) && !h.days.includes(pd(d).getDay()))) return '<td><span class="wc n"></span></td>';
     const ok = done(h, d), v = val(h, d);
-    const txt = h.type === 'check' ? (ok ? I.check : '') : h.type === 'clock' ? (v > 1 ? hhmm(v - 1) : v === 1 ? I.check : '') : (v ? Math.round(v) : '');
+    const txt = h.type === 'check' ? (ok ? I.check : '') : h.type === 'clock' ? (v > 1 ? hhmm(v - 1) : v === 1 ? I.check : '') : (v ? (h.type === 'time' ? short(v) : Math.round(v)) : '');
     return `<td><button class="wc ${ok ? 'y' : v > 0 ? 'p' : ''} ${isRest(d) ? 'rs' : ''}" data-act="wcell" data-id="${h.id}" data-d="${d}"${d > t ? ' disabled' : ''}>${txt}</button></td>`;
   };
   const sum = h => {
-    if (weekly(h)) return `${wkDone(h, wkCur)}/${h.per}`;
+    if (weekly(h)) return wkAmt(h) ? (f => `${f(wkDone(h, wkCur))}<small>/${f(h.target)}</small>`)(h.type === 'time' ? short : Math.round) : `${wkDone(h, wkCur)}/${h.per}`;
     const sc = D.filter(d => d <= t && sched(h, d)); return sc.length ? `${sc.filter(d => done(h, d)).length}/${sc.length}` : '-';
   };
   const foot = D.map(d => { const r = d <= t ? dayRate(d) : null; return `<td>${isRest(d) ? '휴식' : r == null ? '' : pct(r)}</td>`; }).join('');
   return `<header class="top"><h1>주간</h1><div class="mnav">${wkCur !== wkStart(t) ? '<button class="btn sm" data-act="wk" data-n="0">이번 주</button>' : ''}<button class="ib" data-act="wk" data-n="-1">${I.l}</button><span>${md(D[0])} – ${md(D[6])}</span><button class="ib" data-act="wk" data-n="1">${I.r}</button></div></header>
   <div class="card list" style="margin-top:.6rem">${rows.length ? `<table class="wt"><thead><tr><th class="nm"></th>${head}<th class="sm"></th></tr></thead>
-    <tbody>${rows.map(h => `<tr class="${h.cat}"><td class="nm" data-act="hopen" data-id="${h.id}">${esc(h.name)}${weekly(h) ? `<small>주 ${h.per}회</small>` : ''}</td>${D.map(d => cell(h, d)).join('')}<td class="sm">${sum(h)}</td></tr>`).join('')}</tbody>
+    <tbody>${rows.map(h => `<tr class="${h.cat}"><td class="nm" data-act="hopen" data-id="${h.id}">${esc(h.name)}${weekly(h) ? `<small>${wkText(h)}</small>` : ''}</td>${D.map(d => cell(h, d)).join('')}<td class="sm">${sum(h)}</td></tr>`).join('')}</tbody>
     <tfoot><tr><td class="nm">달성률</td>${foot}<td class="sm"></td></tr></tfoot></table>` : '<p class="empty">이 주에 해당하는 습관이 없습니다.</p>'}</div>
   <p class="sub" style="margin:.8rem 2px 0">칸을 눌러 기록 · 날짜를 눌러 휴식일 지정 · 이름을 눌러 상세 보기</p>`;
 }
@@ -457,6 +466,12 @@ function clockChart(h) {
     <div class="hits">${D.map(d => `<div data-tip="${tipDate(d)} · ${fmtVal(h, d)}"></div>`).join('')}</div></div>
   <div class="xax">${D.map((d, i) => `<span>${i % 7 === 1 ? md(d) : ''}</span>`).join('')}</div>`;
 }
+function weekBars(h) {
+  const t = today(), W = [...Array(12)].map((_, i) => addD(wkStart(t), 7 * (i - 11))), vs = W.map(w => wkDone(h, w)), mx = Math.max(h.target * 1.2, ...vs);
+  return `<div class="plot ${h.cat}"><div class="gl goal" style="top:${(1 - h.target / mx) * 100}%"><span>목표 ${fmtAmt(h, h.target)}</span></div><div class="gl base" style="top:100%"></div>
+    <div class="bars">${W.map((w, i) => `<div data-tip="${md(w)} – ${md(addD(w, 6))} · ${fmtAmt(h, vs[i])}"><div class="st" style="height:${vs[i] / mx * 100}%"><i class="${vs[i] >= h.target ? '' : 'p'}" style="flex:1 1 0"></i></div></div>`).join('')}</div></div>
+  <div class="xax">${W.map((w, i) => `<span>${i % 3 === 0 ? md(w) : ''}</span>`).join('')}</div>`;
+}
 function valBars(h) {
   const t = today(), D = [...Array(30)].map((_, i) => addD(t, i - 29)), vs = D.map(d => val(h, d)), mx = Math.max(h.target * 1.2, ...vs), u = h.type === 'time' ? '분' : '회';
   return `<div class="plot ${h.cat}"><div class="gl goal" style="top:${(1 - h.target / mx) * 100}%"><span>목표 ${h.target}${u}</span></div><div class="gl base" style="top:100%"></div>
@@ -483,7 +498,7 @@ function vHabit() {
     <div class="tile"><span class="sub">전체 달성률</span><b>${n ? pct(k / n) : '-'}</b><small>${k}/${n}${u}</small></div>
     <div class="tile"><span class="sub">이번 달</span><b>${mn ? pct(mk / mn) : '-'}</b><small>${mk}/${mn}${u}</small></div>
   </div>
-  ${h.type === 'clock' ? `<h2>시각 · 최근 30일</h2><div class="card">${clockChart(h)}</div>` : h.type !== 'check' ? `<h2>${h.type === 'time' ? '시간' : '횟수'} · 최근 30일</h2><div class="card">${valBars(h)}</div>` : ''}
+  ${h.type === 'clock' ? `<h2>시각 · 최근 30일</h2><div class="card">${clockChart(h)}</div>` : wkAmt(h) ? `<h2>주간 합계 · 최근 12주</h2><div class="card">${weekBars(h)}</div>` : h.type !== 'check' ? `<h2>${h.type === 'time' ? '시간' : '횟수'} · 최근 30일</h2><div class="card">${valBars(h)}</div>` : ''}
   <div class="grid2"><div><h2>월별 달성률 · 최근 12개월</h2><div class="card">${monthBars(h)}</div></div>
   <div><h2>요일별</h2><div class="card">${hWeekday(h)}</div></div></div>
   <h2>최근 1년</h2><div class="card ${h.cat}">${yearHeat(hc, false)}</div>`;
@@ -543,7 +558,7 @@ function ddCard() {
 }
 function hDesc(h) {
   const TY = { check: '완료', count: '횟수', time: '시간', clock: '시각' };
-  return `${h.cat === 'life' ? '일상' : '공부'} · ${TY[h.type]}${h.type === 'clock' ? ` ${hhmm(h.target)} 이전` : h.type !== 'check' ? ' ' + h.target + (h.type === 'time' ? '분' : '회') : ''}${weekly(h) ? ` · 주 ${h.per}회` : h.days.length < 7 ? ' · ' + WDO.filter(x => h.days.includes(x)).map(x => WD[x]).join('') : ''}`;
+  return `${h.cat === 'life' ? '일상' : '공부'} · ${TY[h.type]}${h.type === 'clock' ? ` ${hhmm(h.target)} 이전` : h.type !== 'check' && !wkAmt(h) ? ' ' + h.target + unitOf(h) : ''}${weekly(h) ? ` · ${wkText(h)}` : h.days.length < 7 ? ' · ' + WDO.filter(x => h.days.includes(x)).map(x => WD[x]).join('') : ''}`;
 }
 function vSet() {
   return `<header class="top"><h1>설정</h1></header>
@@ -567,7 +582,7 @@ function vSet() {
     <div class="btns"><button class="btn" data-act="export">내보내기</button><button class="btn" data-act="import">가져오기</button></div>
     <input type="file" id="file" accept="application/json,.json" hidden></div>
   <h2>리포트</h2><div class="card"><div class="btns" style="margin:0"><button class="btn" data-act="report">이번 달 A4 리포트</button></div></div>
-  <p class="sub" style="text-align:center;margin-top:28px">습관 트래커 v1.4</p>
+  <p class="sub" style="text-align:center;margin-top:28px">습관 트래커 v1.5</p>
   </div></div>`;
 }
 
@@ -582,7 +597,7 @@ function report(m) {
   const body = hs.map(h => {
     const [dn, n] = hStat(h, past);
     const cell = d => isRest(d) && alive(h, d) && !weekly(h) && h.days.includes(pd(d).getDay()) ? '<span class="c r"></span>' : weekly(h) ? (alive(h, d) && d <= t && done(h, d) ? `<span class="c ${h.cat}"></span>` : '') : !sched(h, d) ? '' : `<span class="c ${d <= t && done(h, d) ? h.cat : 's'}"></span>`;
-    return `<tr><td class="nm">${esc(h.name)}${weekly(h) ? ` (주${h.per})` : ''}</td>${D.map(d => `<td>${cell(d)}</td>`).join('')}<td class="rt">${n ? Math.round(dn / n * 100) + '%' : '-'}</td></tr>`;
+    return `<tr><td class="nm">${esc(h.name)}${weekly(h) ? ` (${wkText(h)})` : ''}</td>${D.map(d => `<td>${cell(d)}</td>`).join('')}<td class="rt">${n ? Math.round(dn / n * 100) + '%' : '-'}</td></tr>`;
   }).join('');
   const rrow = `<tr><td class="nm">달성률</td>${D.map(d => { const r = d <= t ? dayRate(d) : null; return `<td class="mn">${isRest(d) ? '휴' : r == null ? '' : Math.round(r * 100)}</td>`; }).join('')}<td class="rt">${avg}%</td></tr>`;
   const hr = hs.map(h => { const [dn, n, u] = hStat(h, past); return { h, r: n ? dn / n : 0, dn, n, u }; }).sort((a, b) => b.r - a.r);
@@ -625,14 +640,15 @@ function habitDlg(h) {
     <div class="fld" id="f-tg"><span>하루 목표</span><div class="inl"><input id="f-target" type="number" inputmode="numeric" min="1" value="${h.type === 'check' || h.type === 'clock' ? '' : h.target}" placeholder="${h.type === 'time' ? 30 : 1}"><span id="f-unit"></span></div></div>
     <div class="fld" id="f-tt"><span>목표 시각 (이 시각 이전이면 달성)</span><input id="f-ttime" type="time" value="${hh2(h.type === 'clock' ? h.target : 390)}"></div>
     <div class="fld"><span>빈도</span>${seg('freq', [['days', '요일 지정'], ['week', '주 n회']], weekly(h) ? 'week' : 'days')}</div>
-    <div class="fld" id="f-per"><span>주간 목표</span><div class="inl"><input id="f-pern" type="number" inputmode="numeric" min="1" max="7" value="${h.per || 3}"><span>회 / 주 (일~토)</span></div></div>
+    <div class="fld" id="f-per"><span>주간 목표</span><div class="inl"><input id="f-pern" type="number" inputmode="numeric" min="1" max="7" value="${h.per || 3}"><span id="f-perunit">회 / 주 (일~토)</span></div></div>
+    <div class="fld" id="f-wt"><span>주간 목표 (일~토 합계)</span><div class="inl"><input id="f-wtn" type="number" inputmode="numeric" min="1" value="${wkAmt(h) ? h.target : h.type === 'count' || h.type === 'time' ? h.target * 5 : ''}" placeholder="${h.type === 'time' ? 600 : 10}"><span id="f-wtunit"></span></div><small style="display:block;margin-top:.35rem">하루 목표 없이 이번 주 합계로 판정합니다. 하루에 몰아서 해도 인정됩니다.</small></div>
     <div class="fld" id="f-days"><span>요일</span><div class="days">${WDO.map(i => `<button type="button" data-act="dtog" data-d="${i}" class="${h.days.includes(i) ? 'on' : ''}">${WD[i]}</button>`).join('')}</div></div>
     <div class="dbtns">${n ? '' : `<button class="btn danger" data-act="hdel" data-id="${h.id}">삭제</button>${archived(h) ? `<button class="btn" data-act="hrest" data-id="${h.id}">복원</button>` : `<button class="btn" data-act="harch" data-id="${h.id}">보관</button>`}`}<span></span><button class="btn" data-act="dclose">취소</button><button class="btn pri" data-act="hsave" data-id="${n ? '' : h.id}">저장</button></div>`);
   updForm();
 }
 function valDlg(h, d) {
   const v = val(h, d), clk = h.type === 'clock';
-  openDlg(`<h3>${esc(h.name)}</h3><p class="sub" style="margin:-.6rem 0 1rem">${tipDate(d)} · ${clk ? `목표 ${hhmm(h.target)} 이전` : `목표 ${h.target}${h.type === 'time' ? '분' : '회'}`}</p>
+  openDlg(`<h3>${esc(h.name)}</h3><p class="sub" style="margin:-.6rem 0 1rem">${tipDate(d)} · ${clk ? `목표 ${hhmm(h.target)} 이전` : wkAmt(h) ? `이번 주 ${wkProg(h, d)}` : `목표 ${h.target}${unitOf(h)}`}</p>
     <div class="fld">${clk ? `<input id="f-v" type="time" value="${v > 1 ? hh2(v - 1) : ''}">` : `<input id="f-v" type="number" inputmode="numeric" min="0" value="${v || ''}" placeholder="0">`}</div>
     <div class="dbtns"><button class="btn danger" data-act="vclear" data-id="${h.id}" data-d="${d}">지우기</button><span></span><button class="btn" data-act="dclose">취소</button><button class="btn pri" data-act="vsave" data-id="${h.id}" data-d="${d}">저장</button></div>`);
 }
@@ -649,12 +665,12 @@ function ddDlg(x) {
     <div class="dbtns">${n ? '' : `<button class="btn danger" data-act="dddel" data-id="${x.id}">삭제</button>`}<span></span><button class="btn" data-act="dclose">취소</button><button class="btn pri" data-act="ddsave" data-id="${n ? '' : x.id}">저장</button></div>`);
 }
 function updForm() {
-  const ty = segVal('type');
-  $('#f-tg').hidden = ty === 'check' || ty === 'clock';
+  const ty = segVal('type'), wk = segVal('freq') === 'week', amt = ty === 'count' || ty === 'time';
+  $('#f-tg').hidden = !amt || wk;
   $('#f-tt').hidden = ty !== 'clock';
-  $('#f-unit').textContent = ty === 'time' ? '분' : '회';
-  const wk = segVal('freq') === 'week';
-  $('#f-per').hidden = !wk; $('#f-days').hidden = wk;
+  $('#f-unit').textContent = $('#f-wtunit').textContent = ty === 'time' ? '분' : '회';
+  $('#f-per').hidden = !wk || amt; $('#f-wt').hidden = !wk || !amt; $('#f-days').hidden = wk;
+  $('#f-perunit').textContent = ty === 'clock' ? '일 / 주 (목표 시각 이전에 한 날)' : '회 / 주 (일~토)';
 }
 /* ========== prefs ========== */
 const P = () => ({ ...DEF_P, ...(S.prefs || {}) });
@@ -837,9 +853,11 @@ document.addEventListener('click', e => {
     case 'hsave': {
       const name = $('#f-name').value.trim(), type = segVal('type');
       const days = $$('#dlg .days .on').map(x => +x.dataset.d);
-      const target = type === 'check' ? 1 : type === 'clock' ? toMin($('#f-ttime').value || '06:30') : Math.max(1, Math.round(+$('#f-target').value || (type === 'time' ? 30 : 1)));
+      const freq = segVal('freq'), amt = (type === 'count' || type === 'time') && freq === 'week';
+      const target = type === 'check' ? 1 : type === 'clock' ? toMin($('#f-ttime').value || '06:30')
+        : amt ? Math.max(1, Math.round(+$('#f-wtn').value || (type === 'time' ? 600 : 10))) : Math.max(1, Math.round(+$('#f-target').value || (type === 'time' ? 30 : 1)));
       if (!name) return toast('이름을 입력하세요');
-      const freq = segVal('freq'), per = Math.max(1, Math.min(7, Math.round(+$('#f-pern').value || 1)));
+      const per = Math.max(1, Math.min(7, Math.round(+$('#f-pern').value || 1)));
       if (freq === 'days' && !days.length) return toast('요일을 하나 이상 고르세요');
       const o = { name, cat: segVal('cat'), type, target, days: freq === 'week' ? [0, 1, 2, 3, 4, 5, 6] : days, freq, per, link: '', u: now() };
       if (h) Object.assign(h, o);
