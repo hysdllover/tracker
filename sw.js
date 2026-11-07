@@ -1,4 +1,4 @@
-const C = 'ht-v14';
+const C = 'ht-v15';
 const A = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png'];
 // 설치 시 HTTP 캐시를 거치지 않고 최신 파일을 받음
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(A.map(u => new Request(u, { cache: 'reload' }))))); self.skipWaiting(); });

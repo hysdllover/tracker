@@ -314,3 +314,15 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:1.3rem;hei
 .wt tfoot .nm{cursor:default}
 @media (min-width:900px){.wt .nm{width:10rem}.wc{max-width:3.6rem;height:2.7rem;font-size:.8rem}}
 .wt .sm small{display:block;font-size:.66rem;line-height:1.2}
+/* 수면 */
+.step.slp{gap:.3rem}
+.tin.s{width:6.4rem;padding:.35rem .2rem;font-size:.92rem}
+.slc .sb{position:absolute;display:block;background:var(--c);border-radius:1px;min-height:2px}
+.slc .sb.p{background:color-mix(in srgb,var(--c) 40%,var(--h0))}
+#f-sl>span{display:block;font-size:.85rem;color:var(--sub);margin-bottom:.35rem}
+.slc .slin{position:absolute;top:0;bottom:0;left:0;right:2.8rem}
+.slc .gl span{background:none}
+.gl.gl-l span{left:0;right:auto;background:var(--card);padding:0 4px 0 0}
+.xax.sl-x{padding-right:2.8rem}
+.tin::-webkit-calendar-picker-indicator{display:none}
+.tin{text-align:center}
