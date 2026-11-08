@@ -27,12 +27,13 @@ function model(S) {
   const done = (h, d) => { const v = val(h, d); if (h.type === 'sleep') { const x = slDec(v); return !!x && x.dur >= h.target && (h.bt == null || nightN(x.b) <= nightN(h.bt)); } return h.type === 'clock' ? v > 0 && v - 1 <= h.target : wkAmt(h) ? v > 0 : v >= (h.type === 'check' ? 1 : h.target); };
   const isRest = d => S.rest?.[d]?.[0] === 1;
   const weekly = h => h.freq === 'week';
-  const alive = (h, d) => d >= h.c && !(h.off || []).some(([a, b]) => d >= a && (!b || d < b));
+  const alive = (h, d) => d >= h.c && (!h.end || d <= h.end) && !(h.off || []).some(([a, b]) => d >= a && (!b || d < b));
   const archived = h => (h.off || []).some(r => !r[1]);
   const sched = (h, d) => !weekly(h) && alive(h, d) && h.days.includes(pd(d).getDay()) && !isRest(d);
   const shown = (h, d) => alive(h, d) && (weekly(h) || h.days.includes(pd(d).getDay()));
   const wkDone = (h, d) => { const s = wkStart(d); let n = 0; for (let i = 0; i < 7; i++) { const x = addD(s, i); if (alive(h, x)) n += wkAmt(h) ? val(h, x) : done(h, x) ? 1 : 0; } return n; };
-  const rate = d => { const hs = habits.filter(h => sched(h, d)); return hs.length ? hs.filter(h => done(h, d)).length / hs.length : null; };
+  const w = h => h.w || 1; // 중요도 가중치
+  const rate = d => { const hs = habits.filter(h => sched(h, d)); return hs.length ? hs.reduce((a, h) => a + (done(h, d) ? w(h) : 0), 0) / hs.reduce((a, h) => a + w(h), 0) : null; };
   const dday = (S.dday || []).filter(x => !x.del && x.date >= today()).sort((a, b) => a.date < b.date ? -1 : 1)[0];
   return { habits, val, slDec, done, isRest, weekly, wkAmt, archived, sched, shown, wkDone, rate, dday };
 }
@@ -138,10 +139,11 @@ function habitList(parent, M, P, max) {
     r.addSpacer();
     let right = '';
     const hr = m => m >= 60 ? `${(m / 60).toFixed(1).replace(/\.0$/, '')}h` : `${Math.round(m)}m`;
-    if (M.wkAmt(h)) right = h.type === 'time' ? `주 ${hr(M.wkDone(h, t))}/${hr(h.target)}` : `주 ${M.wkDone(h, t)}/${h.target}`;
+    if (M.wkAmt(h)) right = h.type === 'time' ? `주 ${hr(M.wkDone(h, t))}/${hr(h.target)}` : `주 ${M.wkDone(h, t)}/${h.target}${h.unit || ''}`;
     else if (M.weekly(h)) right = `주 ${M.wkDone(h, t)}/${h.per}`;
     else if (h.type === 'clock') right = v > 1 ? hhmm(v - 1) : '';
     else if (h.type === 'sleep') right = v ? hr(M.slDec(v).dur) : '';
+    else if (h.type === 'time') right = `${Math.floor(v / 60)}:${pad(v % 60)}/${Math.floor(h.target / 60)}:${pad(h.target % 60)}`;
     else if (h.type !== 'check') right = `${Math.round(v)}/${h.target}`;
     if (right) txt(r, right, 10, C.sub);
   }

@@ -326,3 +326,48 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:1.3rem;hei
 .xax.sl-x{padding-right:2.8rem}
 .tin::-webkit-calendar-picker-indicator{display:none}
 .tin{text-align:center}
+
+/* ===== v2.0 ===== */
+/* 습관 설명 · D-day 연동 */
+.hnote{font-size:.8rem;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hdd{font-size:.75rem;color:var(--sub);margin-top:.15rem}
+.hdesc{font-size:.9rem;color:var(--sub);margin:.4rem 0 0;white-space:pre-line}
+/* 완료 습관 취소선 */
+.hrow.ok .hname{text-decoration:line-through;text-decoration-thickness:1px;text-decoration-color:color-mix(in srgb,var(--sub) 70%,transparent)}
+/* 최소 목표만 달성: 중간 톤 / 도전 목표 달성: 진하게 */
+.wd7 i.y.m,.mx i.y.m{background:color-mix(in srgb,var(--c) 55%,var(--h0))}
+.wc.y.m{background:color-mix(in srgb,var(--c) 60%,var(--card))}
+/* 끌어서 순서 바꾸기 */
+.drag{display:grid;place-items:center;width:1.8rem;height:2.2rem;color:var(--sub);touch-action:none;cursor:grab;flex:none}
+.drag svg{width:1.1rem;height:1.1rem}
+.srow.dragging{background:var(--faint);opacity:.85}
+/* 목표 입력 */
+.amt-n input,.amt-t input{width:5rem}
+/* 통계 기간 */
+.rngin{margin-top:.6rem}
+.rngin input{width:auto;flex:1;min-width:0}
+/* iOS식 설정 목록 */
+a.setr{color:inherit;text-decoration:none;cursor:pointer}
+.setr svg{width:1rem;height:1rem;color:var(--sub);flex:none}
+.setr .sub{max-width:55%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.setr.on{background:var(--faint)}
+@media (min-width:900px){.setw{display:grid;grid-template-columns:260px minmax(0,1fr);gap:28px;align-items:start;margin-top:.6rem}}
+/* 글자만 있는 탭 · 선택은 밑줄 */
+nav.tabs svg{display:none}
+nav.tabs a{padding:.95rem 0 .85rem;font-size:.92rem}
+nav.tabs a span{padding-bottom:.15rem;border-bottom:1px solid transparent}
+nav.tabs a.on span{border-bottom-color:var(--text)}
+@media (min-width:900px){nav.tabs a{padding:.7rem .9rem;font-size:1rem}nav.tabs a.on{background:none}}
+/* 아이폰에서도 오늘 화면 아래에 최근 7일 · 이번 달 */
+.cols>aside{display:block}
+@media (max-width:899px){.cols>aside{margin-top:.6rem}}
+/* 점 그래프 */
+[data-chart=dot] .bars .st{width:2px!important;max-width:2px;overflow:visible;position:relative;border-radius:0;gap:0}
+[data-chart=dot] .bars .st i{opacity:.5}
+[data-chart=dot] .bars .st::after{content:"";position:absolute;top:-3.5px;left:50%;width:7px;height:7px;margin-left:-3.5px;border-radius:50%;background:var(--h4);box-shadow:0 0 0 2px var(--card)}
+[hidden]{display:none!important}
+.bars>div{position:relative}
+.bars .gh{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:1.5rem;background:var(--h0);border-radius:1px 1px 0 0;pointer-events:none}
+.bars>div .st{position:relative}
+[data-chart=dot] .bars .gh{display:none}
+[data-chart=dot] .bars .st.z::after{display:none}
