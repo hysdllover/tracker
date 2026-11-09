@@ -409,3 +409,79 @@ nav.tabs a.on span{border-bottom-color:var(--text)}
 [data-style=note] .preview{border-style:solid}
 @media (min-width:900px){[data-style=note] .setw .card.list{border-top:0;border-bottom:0}}
 a.btn{color:inherit;text-decoration:none;display:inline-block}
+
+/* ===== v2.2 아날로그 ===== */
+.anh{font-size:.85rem;font-weight:calc(var(--fw) + 100);margin:1.4rem 0 .7rem;padding-top:1rem;border-top:1px solid var(--line)}
+/* 연필 스케치 그래프: 흔들린 선 + 빗금 채우기 */
+[data-chart=pencil] .bars{filter:url(#rough)}
+[data-chart=pencil] .bars .st i{background:repeating-linear-gradient(-50deg,var(--c) 0 1.2px,transparent 1.2px 3.6px);box-shadow:inset 0 0 0 1px var(--c)}
+[data-chart=pencil] .bars .st i.p{background:repeating-linear-gradient(-50deg,color-mix(in srgb,var(--c) 50%,var(--h0)) 0 1.2px,transparent 1.2px 4.5px);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c) 50%,var(--h0))}
+[data-chart=pencil] .bars .gh{background:none;box-shadow:inset 0 0 0 1px var(--line)}
+[data-chart=pencil] .plot svg{filter:url(#rough)}
+[data-chart=pencil] .slc .sb{background:repeating-linear-gradient(-50deg,var(--c) 0 1.2px,transparent 1.2px 3.6px);box-shadow:inset 0 0 0 1px var(--c);filter:url(#rough)}
+[data-chart=pencil] .gl{border-top-style:dashed}
+[data-chart=pencil] .ibar{filter:url(#rough)}
+/* 손으로 칠한 잔디 */
+[data-heatst=pencil] .yh,[data-heatst=pencil] .cal .d,[data-heatst=pencil] .mx i{filter:url(#crayon)}
+/* 불렛저널 기호 */
+.chk.bj{border:0;background:none;font-family:"Courier New",ui-monospace,monospace;font-size:1.6rem;font-weight:400;color:var(--sub);line-height:1}
+.chk.bj.on,[data-style=note] .chk.bj.on{background:none;color:var(--text);border:0}
+.wc.bj,.wc.bj.y,.wc.bj.y.m{background:none!important;font-family:"Courier New",ui-monospace,monospace;font-size:1.1rem;color:var(--sub)}
+.wc.bj.y{color:var(--text);border-color:var(--c)}
+/* 잉크 마르는 효과 */
+@keyframes inkdry{0%{filter:brightness(.68) saturate(1.7);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 35%,transparent)}100%{filter:none;box-shadow:0 0 0 0 transparent}}
+[data-ink=on] .wet{animation:inkdry 1.3s ease-out}
+/* 넘김식 D-day */
+.flip{display:inline-flex;gap:2px;align-items:center;perspective:200px;font-family:"Courier New",ui-monospace,monospace}
+.flip .fl{font-size:.92rem;margin-right:2px;color:var(--text)}
+.fd{position:relative;display:inline-grid;place-items:center;width:1.15rem;height:1.6rem;background:color-mix(in srgb,var(--text) 88%,var(--bg));color:var(--bg);border-radius:2px;font-size:1rem;font-weight:400;overflow:hidden}
+.fd::after{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:var(--bg);opacity:.45}
+.flip.go .fd b{display:block;animation:flipin .55s cubic-bezier(.3,.7,.4,1) both;animation-delay:inherit;transform-origin:50% 100%}
+@keyframes flipin{0%{transform:rotateX(-90deg);opacity:0}100%{transform:none;opacity:1}}
+/* 장부식 기록 */
+.ledger{padding:0;overflow:hidden}
+.ledger table{width:100%;border-collapse:collapse;font-size:.88rem}
+.ledger th{font-weight:var(--fw);font-size:.75rem;color:var(--sub);text-align:left;padding:.6rem .6rem .4rem;border-bottom:3px double var(--line)}
+.ledger td{padding:.42rem .6rem;border-bottom:1px solid var(--line)}
+.ledger td+td,.ledger th+th{border-left:1px solid var(--line)}
+.ledger tr.mo td{border-top:1px solid var(--sub)}
+.ledger .ld,.ledger .la{font-family:"Courier New",ui-monospace,monospace;white-space:nowrap;width:5.6rem}
+.ledger .ld small{font-family:var(--ff)}
+.ledger .la{text-align:right;width:3rem;color:var(--sub)}
+.ledger .lm{text-align:center;width:2.6rem;font-family:"Courier New",ui-monospace,monospace;color:var(--sub)}
+.ledger .lm.y{color:var(--text)}
+.ledger .le{width:2.8rem;text-align:right;padding:.2rem .5rem}
+.ledger .le .ib{width:1.9rem;height:1.9rem}
+.ledger tbody tr:last-child td{border-bottom:0}
+[data-style=note] .ledger{border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+/* 월말 다이어리 페이지 (A4) */
+.dp-h{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:5mm}
+.dp-y{font-family:"Courier New",ui-monospace,monospace;font-size:9pt;color:#8A9099;letter-spacing:.2em}
+.dp h1{font-size:34pt;font-weight:200;line-height:1;margin:0}
+.dp h1 small{font-size:12pt;margin-left:1mm}
+.dp-m{display:flex;gap:6mm;font-size:8pt;color:#8A9099}
+.dp-m b{color:#3F4853;font-weight:400;font-family:"Courier New",ui-monospace,monospace}
+.dp-cal{display:grid;grid-template-columns:repeat(7,1fr);border-top:.4mm solid #3F4853;border-left:.15mm solid #D6DADF}
+.dw{font-size:7pt;color:#8A9099;padding:1.2mm 1.5mm;border-right:.15mm solid #D6DADF;border-bottom:.15mm solid #D6DADF}
+.dw.sun,.dc.sun .dn{color:#A88A86}
+.dc{position:relative;height:29mm;padding:1.3mm 1.6mm;border-right:.15mm solid #D6DADF;border-bottom:.15mm solid #D6DADF;display:flex;flex-direction:column;gap:.8mm;font-size:6.5pt;color:#5A6370;overflow:hidden}
+.dc.e{background:repeating-linear-gradient(135deg,transparent 0 2mm,#EEF0F2 2mm 2.3mm)}
+.dc .dn{font-family:"Courier New",ui-monospace,monospace;font-size:10pt;color:#3F4853}
+.dc .sq{display:flex;flex-wrap:wrap;gap:.6mm}
+.dc .sq i{width:2.2mm;height:2.2mm;border:.15mm solid #9AA4AE}
+.dc .sq i.f{background:var(--u-life);border-color:var(--u-life)}
+.dc .dl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dc .dl.dd{color:#A9706A}
+.stamp{position:absolute;right:1.5mm;top:1.6mm;font-style:normal;font-size:6.5pt;color:#A9706A;border:.35mm solid #A9706A;padding:.4mm 1mm;transform:rotate(-9deg);opacity:.85;letter-spacing:.1em;filter:url(#rough)}
+.dp h4{font-size:8pt;font-weight:400;color:#8A9099;margin:6mm 0 2.5mm}
+.dp-hb{display:grid;grid-template-columns:1fr 1fr;gap:1.8mm 8mm;font-size:8pt}
+.dp-hb .r{display:flex;align-items:center;gap:2mm}
+.dp-hb .r span:first-child{width:24mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.dp-hb .pb{flex:1;height:3mm;border:.2mm solid #9AA4AE;filter:url(#rough)}
+.dp-hb .pb i{display:block;height:100%;background:repeating-linear-gradient(-50deg,var(--u-life) 0 .35mm,transparent .35mm 1mm)}
+.dp-hb .pb i.study{background:repeating-linear-gradient(-50deg,var(--u-study) 0 .35mm,transparent .35mm 1mm)}
+.dp-hb em{font-style:normal;font-family:"Courier New",ui-monospace,monospace;width:10mm;text-align:right}
+.dp-f{text-align:right;font-family:"Courier New",ui-monospace,monospace;font-size:7pt;color:#B0B6BD;margin-top:6mm}
+.ledger th{white-space:nowrap}
+.ledger .lm{width:3rem}
+.chk.bj{font-size:1.25rem}

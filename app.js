@@ -21,7 +21,7 @@ const FONTS = {
   gowun: ['고운돋움', '"Gowun Dodum"', 'Gowun+Dodum'],
   custom: ['내 폰트', '"HTCustom"'],
 };
-const DEF_P = { font: 'pretendard', size: 13, weight: 300, mode: 'auto', life: '#8FA0AE', study: '#5F6F80', accent: '#BAC2C9', heat: 'life', chart: 'bar', partial: false, style: 'card' };
+const DEF_P = { font: 'pretendard', size: 13, weight: 300, mode: 'auto', life: '#8FA0AE', study: '#5F6F80', accent: '#BAC2C9', heat: 'life', chart: 'bar', partial: false, style: 'card', heatSt: 'plain', mark: 'box', flip: true, ink: true };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => Date.now();
 const pad = n => String(n).padStart(2, '0');
@@ -196,9 +196,14 @@ function setVal(h, d, v) {
 }
 let undoFn = null;
 function offerUndo(msg, fn) { undoFn = fn; toast(msg, true); }
+let wet = null; // 잉크 효과: 방금 완료한 습관·날짜
+const isWet = (h, d) => wet && wet.id === h.id && wet.d === d && now() - wet.t < 1500;
 function setValU(h, d, v) {
   const prev = S.logs[d]?.v?.[h.id]?.[0] || 0;
+  const was = done(h, d);
+  wet = null;
   setVal(h, d, v);
+  if (!was && done(h, d)) { wet = { id: h.id, d, t: now() }; render(); }
   offerUndo(`${h.name} · ${fmtVal(h, d)}`, () => setVal(h, d, prev));
 }
 function habitU(h, msg, mut) {
@@ -373,6 +378,8 @@ function ddPlan(h) {
   const f = v => unit ? `${v}${unit}` : fmtAmt(h, v);
   return { name: x.name, label: ddLabel(x.date), left, need, exp, f, perDay: need / left };
 }
+const bujo = () => P().mark === 'bujo';
+const bjGlyph = (ok, d) => ok ? '×' : d < today() ? '−' : '•';
 function row(h, d) {
   const v = val(h, d), t = goal(h), ok = done(h, d), st = streak(h), unit = unitOf(h);
   const meta = [];
@@ -386,7 +393,8 @@ function row(h, d) {
   const w7 = [...Array(7)].map((_, i) => addD(d, i - 6)).map(x => `<i class="${(weekly(h) ? !alive(h, x) : !sched(h, x)) ? 'n' : cls(h, x)}"></i>`).join('');
   const pl = d === today() ? ddPlan(h) : null;
   let ctl;
-  if (h.type === 'check') ctl = `<button class="chk ${ok ? 'on' : ''}" data-act="tog" data-id="${h.id}" aria-label="완료">${I.check}</button>`;
+  if (h.type === 'check') ctl = bujo() ? `<button class="chk bj ${ok ? 'on' : ''} ${isWet(h, d) ? 'wet' : ''}" data-act="tog" data-id="${h.id}" aria-label="완료">${bjGlyph(ok, d)}</button>`
+    : `<button class="chk ${ok ? 'on' : ''} ${isWet(h, d) ? 'wet' : ''}" data-act="tog" data-id="${h.id}" aria-label="완료">${I.check}</button>`;
   else if (h.type === 'clock') ctl = `<div class="step">${v > 1 ? '' : `<button class="btn sm" data-act="clnow" data-id="${h.id}">지금</button>`}<input type="time" class="tin" data-clock="${h.id}" value="${v > 1 ? hh2(v - 1) : ''}" aria-label="시각"></div>`;
   else if (h.type === 'sleep') { const x = slDec(v); ctl = `<div class="step slp"><input type="time" class="tin s" data-sleep="${h.id}" value="${x ? hh2(x.b) : ''}" aria-label="취침"><span class="sub">→</span><input type="time" class="tin s" data-sleep="${h.id}" value="${x ? hh2(x.w) : ''}" aria-label="기상"></div>`; }
   else ctl = `<div class="step"><button class="ib" data-act="inc" data-id="${h.id}" data-n="-1">${I.minus}</button><button class="val" data-act="vedit" data-id="${h.id}" data-d="${d}">${h.type === 'time' ? hmS(v) : v}<small>${wkAmt(h) ? (h.type === 'time' ? '' : unit) : h.type === 'time' ? `/${hmS(t)}` : `/${t}${unit}`}</small></button><button class="ib" data-act="inc" data-id="${h.id}" data-n="1">${I.plus}</button></div>`;
@@ -507,6 +515,13 @@ function heat(m) {
   return `<div class="cal">${h}</div>`;
 }
 
+// 넘김식 숫자: 날짜가 바뀐 뒤 처음 볼 때 한 번 넘어감
+function flipDD(dd) {
+  const n = dayDiff(today(), dd.date), key = 'ht.flip', seen = ls(key), go = seen !== today();
+  if (go) ls(key, today());
+  const digits = n === 0 ? ['D', 'A', 'Y'] : String(n).split('');
+  return `<span class="flip ${go ? 'go' : ''}"><span class="fl">D-</span>${digits.map((c, i) => `<span class="fd" style="animation-delay:${i * .08}s"><b>${c}</b></span>`).join('')}</span>`;
+}
 const viewSw = v => `<div class="seg vsw"><button data-act="go" data-h="today" class="${v === 'today' ? 'on' : ''}">하루</button><button data-act="go" data-h="week" class="${v === 'week' ? 'on' : ''}">주간</button></div>`;
 function vToday() {
   const d = cur, dt = pd(d), hs = habits().filter(h => shown(h, d)), dl = hs.filter(h => !weekly(h));
@@ -515,7 +530,7 @@ function vToday() {
   const rel = diff === 0 ? '오늘' : diff === 1 ? '어제' : diff === -1 ? '내일' : diff > 0 ? `${diff}일 전` : `${-diff}일 후`;
   const grp = c => { const l = hs.filter(h => h.cat === c); return l.length ? `<h2>${c === 'life' ? '일상' : '공부'}</h2><div class="card list">${l.map(h => row(h, d)).join('')}</div>` : ''; };
   const dd = nextDday(), rest = isRest(d);
-  return `<div class="topline"><i style="width:${rest ? 0 : r * 100}%"></i></div>${viewSw('today')}${dd ? `<div class="ddbar"><span>${esc(dd.name)}</span><b>${ddLabel(dd.date)}</b><span class="sub">${md(dd.date)}</span></div>` : ''}
+  return `<div class="topline"><i style="width:${rest ? 0 : r * 100}%"></i></div>${viewSw('today')}${dd ? `<div class="ddbar"><span>${esc(dd.name)}</span>${P().flip ? flipDD(dd) : `<b>${ddLabel(dd.date)}</b>`}<span class="sub">${md(dd.date)}</span></div>` : ''}
   <header class="top"><div><div class="sub">${rel}</div><h1>${dt.getMonth() + 1}월 ${dt.getDate()}일 ${WD[dt.getDay()]}요일</h1>
     <div class="datenav"><button class="btn" data-act="day" data-n="-1">이전</button>${diff ? '<button class="btn" data-act="day" data-n="0">오늘</button>' : ''}<button class="btn" data-act="day" data-n="1">다음</button><button class="btn ${rest ? 'on' : ''}" data-act="rest" data-d="${d}">휴식일</button></div></div>
     ${rest ? '<div class="score"><b>휴식</b><span class="sub">통계에서 제외</span></div>' : `<div class="score"><b>${pct(r)}</b><span class="sub">${dn}/${dl.length} 완료</span></div>`}</header>
@@ -534,8 +549,8 @@ function vWeek() {
   const cell = (h, d) => {
     if (!alive(h, d) || (!weekly(h) && !h.days.includes(pd(d).getDay()))) return '<td><span class="wc n"></span></td>';
     const ok = done(h, d), v = val(h, d);
-    const txt = h.type === 'check' ? (ok ? I.check : '') : h.type === 'clock' ? (v > 1 ? hhmm(v - 1) : v === 1 ? I.check : '') : h.type === 'sleep' ? (v ? hmS(slDec(v).dur) : '') : (v ? (h.type === 'time' ? hmS(v) : Math.round(v)) : '');
-    return `<td><button class="wc ${cls(h, d)} ${isRest(d) ? 'rs' : ''}" data-act="wcell" data-id="${h.id}" data-d="${d}"${d > t ? ' disabled' : ''}>${txt}</button></td>`;
+    const txt = h.type === 'check' ? (bujo() ? bjGlyph(ok, d) : ok ? I.check : '') : h.type === 'clock' ? (v > 1 ? hhmm(v - 1) : v === 1 ? I.check : '') : h.type === 'sleep' ? (v ? hmS(slDec(v).dur) : '') : (v ? (h.type === 'time' ? hmS(v) : Math.round(v)) : '');
+    return `<td><button class="wc ${cls(h, d)} ${isRest(d) ? 'rs' : ''} ${isWet(h, d) ? 'wet' : ''} ${h.type === 'check' && bujo() ? 'bj' : ''}" data-act="wcell" data-id="${h.id}" data-d="${d}"${d > t ? ' disabled' : ''}>${txt}</button></td>`;
   };
   const sum = h => {
     if (weekly(h)) return wkAmt(h) ? (f => `${f(wkDone(h, wkCur))}<small>/${f(h.target)}</small>`)(h.type === 'time' ? short : Math.round) : `${wkDone(h, wkCur)}/${h.per}`;
@@ -621,16 +636,23 @@ function valBars(h) {
 }
 let hTab = 'sum', hTabFor = null;
 // 최근 60일 기록 목록 (눌러서 바로 수정)
+// 장부식 기록: 날짜 | 기록 | 표시 | 누계 (최근 60일, 오래된 날부터 누계)
 function hLog(h) {
-  const t = today(), rows = [];
-  for (let i = 0; i < 60; i++) {
+  const t = today(), list = [];
+  for (let i = 59; i >= 0; i--) {
     const d = addD(t, -i);
     if (!alive(h, d)) continue;
     const v = val(h, d), on = weekly(h) || h.days.includes(pd(d).getDay()), rest = !weekly(h) && isRest(d);
     if (!on && !v) continue;
-    rows.push(`<div class="srow lg ${h.cat}"><i class="lgd ${rest ? 'rs' : cls(h, d)}"></i><span class="grow">${tipDate(d)}</span><span class="sub">${rest ? '휴식일' : v || h.type === 'check' ? fmtVal(h, d) : '미기록'}</span><button class="ib" data-act="${h.type === 'check' ? 'wcell' : 'vedit'}" data-id="${h.id}" data-d="${d}" aria-label="${h.type === 'check' ? '완료 전환' : '수정'}">${h.type === 'check' ? I.check : I.edit}</button></div>`);
+    list.push({ d, v, rest, ok: done(h, d) });
   }
-  return `<div class="card list">${rows.join('') || '<p class="empty">최근 60일 기록이 없습니다.</p>'}</div>`;
+  let acc = 0;
+  list.forEach(x => { if (x.ok) acc++; x.acc = acc; });
+  const mark = x => x.rest ? '휴' : bujo() ? bjGlyph(x.ok, x.d) : x.ok ? '○' : '';
+  const rows = list.reverse().map(x => `<tr class="${x.d.slice(8) === '01' ? 'mo' : ''}"><td class="ld">${x.d.slice(5).replace('-', '.')} <small>${WD[pd(x.d).getDay()]}</small></td>
+    <td class="lv">${x.rest ? '휴식일' : x.v || h.type === 'check' ? fmtVal(h, x.d) : '<small>미기록</small>'}</td><td class="lm ${h.cat} ${x.ok ? 'y' : ''}">${mark(x)}</td><td class="la">${x.acc}</td>
+    <td class="le"><button class="ib" data-act="${h.type === 'check' ? 'wcell' : 'vedit'}" data-id="${h.id}" data-d="${x.d}" aria-label="${h.type === 'check' ? '완료 전환' : '수정'}">${h.type === 'check' ? I.check : I.edit}</button></td></tr>`).join('');
+  return `<div class="card ledger">${rows ? `<table><thead><tr><th>날짜</th><th>기록</th><th>표시</th><th>누계</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="empty">최근 60일 기록이 없습니다.</p>'}</div>`;
 }
 function vHabit() {
   const h = S.habits.find(x => x.id === hid && !x.del);
@@ -709,7 +731,7 @@ function vStats() {
   </div></div>
   <h2>습관 매트릭스${D.length > 31 ? ' · 마지막 31일' : ''}</h2><div class="card">${matrix(MX, tickLab(MX, mm))}</div>
   <h2>최근 1년</h2><div class="card">${yearHeat()}</div>
-  ${mm ? '<button class="btn" style="width:100%;margin-top:1.2rem" data-act="report">A4 월간 리포트</button>' : ''}`;
+  ${mm ? '<div class="btns" style="margin-top:1.2rem"><button class="btn" style="flex:1" data-act="report">A4 월간 리포트</button><button class="btn" style="flex:1" data-act="diary">A4 다이어리 페이지</button></div>' : ''}`;
 }
 function designCard() {
   const p = P();
@@ -725,7 +747,13 @@ function designCard() {
     <div class="fld"><span>굵기</span>${seg('pref:weight', [['200', '가늘게'], ['300', '얇게'], ['400', '보통']], String(p.weight))}</div>
     <div class="fld"><span>화면</span>${seg('pref:mode', [['auto', '자동'], ['light', '라이트'], ['dark', '다크']], p.mode)}</div>
     <div class="fld"><span>화면 스타일</span>${seg('pref:style', [['card', '카드'], ['note', '노트']], p.style || 'card')}</div>
-    <div class="fld"><span>그래프 모양</span>${seg('pref:chart', [['bar', '막대'], ['dot', '점']], p.chart)}</div>
+    <div class="fld"><span>그래프 모양</span>${seg('pref:chart', [['bar', '막대'], ['dot', '점'], ['pencil', '연필']], p.chart)}</div>
+    <h4 class="anh">아날로그</h4>
+    <div class="fld"><span>잔디 칠</span>${seg('pref:heatSt', [['plain', '단색'], ['pencil', '색연필']], p.heatSt)}</div>
+    <div class="fld"><span>체크 표시</span>${seg('pref:mark', [['box', '칸'], ['bujo', '불렛저널 · × −']], p.mark)}</div>
+    <div class="fld"><span>D-day 숫자</span>${seg('pref:flip', [['0', '기본'], ['1', '넘김식']], p.flip ? '1' : '0')}</div>
+    <div class="fld"><span>잉크 마르는 효과</span>${seg('pref:ink', [['0', '끔'], ['1', '켬']], p.ink ? '1' : '0')}</div>
+    <button class="btn" data-act="analog" style="margin-bottom:.6rem">아날로그로 한 번에 (노트 · 연필 · 색연필 · 불렛저널)</button>
     <button class="btn" data-act="preset-reset">기본값으로</button>
   </div>`;
 }
@@ -741,7 +769,7 @@ function hDesc(h) {
   const f = weekly(h) ? ` · ${wkText(h)}${wkAmt(h) && h.stretch ? `(도전 ${fmtGoal(h, h.stretch)})` : ''}` : h.days.length < 7 ? ' · ' + WDO.filter(x => h.days.includes(x)).map(x => WD[x]).join('') : '';
   return `${h.cat === 'life' ? '일상' : '공부'} · ${TY[h.type]}${g}${f}${wOf(h) > 1 ? ` · ${wOf(h) === 3 ? '핵심' : '중요'}` : ''}`;
 }
-const VER = 'v2.1';
+const VER = 'v2.2';
 const SET_ITEMS = [
   ['habits', '습관', () => `${habits().filter(h => !archived(h)).length}개`],
   ['dday', 'D-day', () => nextDday() ? `${nextDday().name} ${ddLabel(nextDday().date)}` : ''],
@@ -831,6 +859,33 @@ function report(m) {
     <h4>습관별 달성률</h4>
     <div class="rp-s">${hr.map(x => `<div class="r"><span>${esc(x.h.name)}</span><i style="width:${x.r * 40}mm;background:var(--u-${x.h.cat})"></i><em>${fk(x.dn)}/${x.n}${x.u} · ${Math.round(x.r * 100)}%</em></div>`).join('') || '<div style="color:#999">기록 없음</div>'}</div>
   </div>`;
+}
+function diaryPage(m) {
+  const D = monthDays(m), t = today(), past = D.filter(d => d <= t), [y, mo] = m.split('-').map(Number), off = pd(D[0]).getDay();
+  const hs = habits().filter(h => inRange(h, D)), sl = hs.find(h => h.type === 'sleep'), tm = hs.find(h => h.type === 'time');
+  const rates = past.map(dayRate).filter(r => r != null), avg = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 100) : 0;
+  const perfect = past.filter(d => dayRate(d) === 1).length, dd = ddays().find(x => x.date >= D[0]);
+  const cells = '<div class="dc e"></div>'.repeat(off) + D.map(d => {
+    const r = d <= t ? rateOf(d) : null, rest = isRest(d), w = pd(d).getDay();
+    return `<div class="dc ${w === 0 ? 'sun' : ''}"><span class="dn">${+d.slice(8)}</span>${r && r[2] === 1 ? '<i class="stamp">다 함</i>' : ''}
+      ${rest ? '<span class="dl">휴식</span>' : r ? `<span class="sq">${'<i class="f"></i>'.repeat(r[0])}${'<i></i>'.repeat(r[1] - r[0])}</span>` : ''}
+      ${tm && val(tm, d) ? `<span class="dl">${esc(tm.name)} ${hmS(val(tm, d))}</span>` : ''}${sl && val(sl, d) ? `<span class="dl">수면 ${hmS(slDec(val(sl, d)).dur)}</span>` : ''}
+      ${dd && dd.date === d ? `<span class="dl dd">${esc(dd.name)}</span>` : ''}</div>`;
+  }).join('');
+  const hr = hs.map(h => { const [k, n] = hStat(h, past); return { h, r: n ? k / n : 0 }; });
+  return `<div class="page dp">
+    <div class="dp-h"><div><span class="dp-y">${y}</span><h1>${mo}<small>월</small></h1></div>
+      <div class="dp-m"><span>평균 달성 <b>${avg}%</b></span><span>다 한 날 <b>${perfect}일</b></span>${dd ? `<span>${esc(dd.name)} <b>${dd.date.slice(5).replace('-', '.')}</b></span>` : ''}</div></div>
+    <div class="dp-cal">${[...WD].map((w, i) => `<div class="dw ${i === 0 ? 'sun' : ''}">${w}</div>`).join('')}${cells}</div>
+    <h4>습관</h4>
+    <div class="dp-hb">${hr.map(x => `<div class="r"><span>${esc(x.h.name)}</span><span class="pb"><i class="${x.h.cat}" style="width:${x.r * 100}%"></i></span><em>${Math.round(x.r * 100)}%</em></div>`).join('') || '<div>기록 없음</div>'}</div>
+    <div class="dp-f">${y}.${pad(mo)}</div>
+  </div>`;
+}
+function openPrint(html) {
+  const p = $('#print');
+  p.innerHTML = `<div class="pbar-top"><button class="btn" data-act="pclose">닫기</button><button class="btn pri" data-act="pprint">인쇄</button></div>${html}`;
+  p.classList.add('show'); fitReport();
 }
 function openReport(m) {
   const p = $('#print');
@@ -931,6 +986,9 @@ function applyPrefs() {
   R.dataset.theme = p.mode === 'dark' || (p.mode === 'auto' && mq.matches) ? 'dark' : 'light';
   R.dataset.chart = p.chart || 'bar';
   R.dataset.style = p.style || 'card';
+  R.dataset.heatst = p.heatSt || 'plain';
+  R.dataset.mark = p.mark || 'box';
+  R.dataset.ink = p.ink === false ? 'off' : 'on';
   $('#tc').content = getComputedStyle(R).getPropertyValue('--bg').trim();
 }
 mq.addEventListener?.('change', applyPrefs);
@@ -1091,7 +1149,7 @@ document.addEventListener('click', e => {
     case 'mon': { const d = pd(ym + '-01'); d.setMonth(d.getMonth() + +b.dataset.n); ym = ds(d).slice(0, 7); render(); break; }
     case 'seg': {
       const p = b.parentElement;
-      if (p.dataset.f.startsWith('pref:')) { const k = p.dataset.f.slice(5), v = b.dataset.v; setPref({ [k]: k === 'weight' ? +v : k === 'partial' ? v === '1' : v }); break; }
+      if (p.dataset.f.startsWith('pref:')) { const k = p.dataset.f.slice(5), v = b.dataset.v; setPref({ [k]: k === 'weight' ? +v : ['partial', 'flip', 'ink'].includes(k) ? v === '1' : v }); break; }
       if (p.dataset.f === 'rng') { rng.m = b.dataset.v; render(); break; }
       if (p.dataset.f === 'htab') { hTab = b.dataset.v; render(); break; }
       $$('button', p).forEach(x => x.classList.toggle('on', x === b));
@@ -1142,6 +1200,8 @@ document.addEventListener('click', e => {
     case 'preset-reset': if (confirm('디자인 설정을 기본값으로 되돌릴까요?')) { S.prefs = { ...DEF_P, u: now() }; commit(); } break;
     case 'export': exportData(); break;
     case 'import': $('#file').click(); break;
+    case 'diary': openPrint(diaryPage(view === 'stats' && rng.m === 'month' ? ym : today().slice(0, 7))); break;
+    case 'analog': setPref({ chart: 'pencil', heatSt: 'pencil', mark: 'bujo', flip: true, ink: true, style: 'note' }); toast('아날로그 설정을 적용했습니다'); break;
     case 'report': openReport(view === 'stats' && rng.m === 'month' ? ym : today().slice(0, 7)); break;
     case 'pclose': $('#print').classList.remove('show'); break;
     case 'pprint': window.print(); break;

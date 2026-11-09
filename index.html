@@ -14,9 +14,15 @@
 <link rel="apple-touch-icon" href="icon-180.png?v=2">
 <link rel="icon" href="icon-180.png?v=2">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-<link rel="stylesheet" href="style.css?v=23">
+<link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- 손그림: 흔들린 선 -->
+  <filter id="rough"><feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="3" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="2.4" xChannelSelector="R" yChannelSelector="G"/></filter>
+  <!-- 색연필: 결이 남는 칠 + 고르지 않은 테두리 -->
+  <filter id="crayon"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="7" result="g"/><feColorMatrix in="g" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 -0.85 1.2" result="m"/><feComposite in="SourceGraphic" in2="m" operator="in" result="t"/><feTurbulence type="fractalNoise" baseFrequency="0.08" numOctaves="2" seed="2" result="w"/><feDisplacementMap in="t" in2="w" scale="1.4" xChannelSelector="R" yChannelSelector="G"/></filter>
+</svg>
 <nav class="tabs">
   <div class="brand">습관 트래커</div>
   <a href="#today" data-v="today"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg><span>기록</span></a>
@@ -28,6 +34,6 @@
 <div id="print"></div>
 <div id="toast"></div>
 <div id="tip"></div>
-<script src="app.js?v=23"></script>
+<script src="app.js?v=25"></script>
 </body>
 </html>
