@@ -379,7 +379,8 @@ function ddPlan(h) {
   return { name: x.name, label: ddLabel(x.date), left, need, exp, f, perDay: need / left };
 }
 const bujo = () => P().mark === 'bujo';
-const bjGlyph = (ok, d) => ok ? '×' : d < today() ? '−' : '•';
+// 완료는 체크 표시로 통일 (• 할 일 · − 안 함)
+const bjGlyph = (ok, d) => ok ? I.check : d < today() ? '−' : '•';
 function row(h, d) {
   const v = val(h, d), t = goal(h), ok = done(h, d), st = streak(h), unit = unitOf(h);
   const meta = [];
@@ -648,7 +649,7 @@ function hLog(h) {
   }
   let acc = 0;
   list.forEach(x => { if (x.ok) acc++; x.acc = acc; });
-  const mark = x => x.rest ? '휴' : bujo() ? bjGlyph(x.ok, x.d) : x.ok ? '○' : '';
+  const mark = x => x.rest ? '휴' : bujo() ? bjGlyph(x.ok, x.d) : x.ok ? I.check : '';
   const rows = list.reverse().map(x => `<tr class="${x.d.slice(8) === '01' ? 'mo' : ''}"><td class="ld">${x.d.slice(5).replace('-', '.')} <small>${WD[pd(x.d).getDay()]}</small></td>
     <td class="lv">${x.rest ? '휴식일' : x.v || h.type === 'check' ? fmtVal(h, x.d) : '<small>미기록</small>'}</td><td class="lm ${h.cat} ${x.ok ? 'y' : ''}">${mark(x)}</td><td class="la">${x.acc}</td>
     <td class="le"><button class="ib" data-act="${h.type === 'check' ? 'wcell' : 'vedit'}" data-id="${h.id}" data-d="${x.d}" aria-label="${h.type === 'check' ? '완료 전환' : '수정'}">${h.type === 'check' ? I.check : I.edit}</button></td></tr>`).join('');
@@ -750,7 +751,7 @@ function designCard() {
     <div class="fld"><span>그래프 모양</span>${seg('pref:chart', [['bar', '막대'], ['dot', '점'], ['pencil', '연필']], p.chart)}</div>
     <h4 class="anh">아날로그</h4>
     <div class="fld"><span>잔디 칠</span>${seg('pref:heatSt', [['plain', '단색'], ['pencil', '색연필']], p.heatSt)}</div>
-    <div class="fld"><span>체크 표시</span>${seg('pref:mark', [['box', '칸'], ['bujo', '불렛저널 · × −']], p.mark)}</div>
+    <div class="fld"><span>체크 표시</span>${seg('pref:mark', [['box', '칸'], ['bujo', '불렛저널 · • −']], p.mark)}</div>
     <div class="fld"><span>D-day 숫자</span>${seg('pref:flip', [['0', '기본'], ['1', '넘김식']], p.flip ? '1' : '0')}</div>
     <div class="fld"><span>잉크 마르는 효과</span>${seg('pref:ink', [['0', '끔'], ['1', '켬']], p.ink ? '1' : '0')}</div>
     <button class="btn" data-act="analog" style="margin-bottom:.6rem">아날로그로 한 번에 (노트 · 연필 · 색연필 · 불렛저널)</button>
