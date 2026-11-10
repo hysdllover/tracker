@@ -21,7 +21,7 @@ const FONTS = {
   gowun: ['고운돋움', '"Gowun Dodum"', 'Gowun+Dodum'],
   custom: ['내 폰트', '"HTCustom"'],
 };
-const DEF_P = { font: 'pretendard', size: 13, weight: 300, mode: 'auto', life: '#8FA0AE', study: '#5F6F80', accent: '#BAC2C9', heat: 'life', chart: 'bar', partial: false, style: 'card', heatSt: 'plain', mark: 'box', flip: true, ink: true, sketch: false };
+const DEF_P = { font: 'pretendard', size: 13, weight: 300, mode: 'auto', life: '#8FA0AE', study: '#5F6F80', accent: '#BAC2C9', heat: 'life', chart: 'bar', partial: false, style: 'card', heatSt: 'plain', mark: 'box', flip: true, ink: true, sketch: true };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => Date.now();
 const pad = n => String(n).padStart(2, '0');
@@ -74,6 +74,8 @@ function seed() {
 let S = ls(KEY) || seed();
 // 이전 기본 샌드색 → 슬레이트로 이전
 if (S.prefs?.study === '#B5A88C') { S.prefs.study = '#5F6F80'; S.prefs.u = Date.now(); }
+// 기록 화면 손그림을 한 번 켜 둠 (이후 사용자가 끄면 그대로 유지)
+if (S.prefs && !S.prefs.skv) { S.prefs.sketch = true; S.prefs.skv = 1; S.prefs.u = Date.now(); }
 // 횟수 습관은 주간 합계만 사용: 하루 목표였던 습관은 '하루 목표 × 요일 수'로 이전
 (S.habits || []).forEach(h => { if (h.type === 'count' && h.freq !== 'week') { h.target = h.target * (h.days?.length || 7); h.freq = 'week'; h.days = [0, 1, 2, 3, 4, 5, 6]; h.u = Date.now(); } });
 let cfg = ls(CFG) || {};
@@ -996,7 +998,7 @@ function applyPrefs() {
 }
 mq.addEventListener?.('change', applyPrefs);
 function setPref(o, live) {
-  S.prefs = { ...P(), ...o, u: now() };
+  S.prefs = { ...P(), ...o, skv: 1, u: now() };
   applyPrefs();
   if (live) ls(KEY, S); else commit();
 }
