@@ -21,7 +21,7 @@ const FONTS = {
   gowun: ['고운돋움', '"Gowun Dodum"', 'Gowun+Dodum'],
   custom: ['내 폰트', '"HTCustom"'],
 };
-const DEF_P = { font: 'pretendard', size: 13, weight: 300, mode: 'auto', life: '#8FA0AE', study: '#5F6F80', accent: '#BAC2C9', heat: 'life', chart: 'bar', partial: false, style: 'card', heatSt: 'plain', mark: 'box', flip: true, ink: true };
+const DEF_P = { font: 'pretendard', size: 13, weight: 300, mode: 'auto', life: '#8FA0AE', study: '#5F6F80', accent: '#BAC2C9', heat: 'life', chart: 'bar', partial: false, style: 'card', heatSt: 'plain', mark: 'box', flip: true, ink: true, sketch: false };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const now = () => Date.now();
 const pad = n => String(n).padStart(2, '0');
@@ -754,6 +754,7 @@ function designCard() {
     <div class="fld"><span>체크 표시</span>${seg('pref:mark', [['box', '칸'], ['bujo', '불렛저널 · • −']], p.mark)}</div>
     <div class="fld"><span>D-day 숫자</span>${seg('pref:flip', [['0', '기본'], ['1', '넘김식']], p.flip ? '1' : '0')}</div>
     <div class="fld"><span>잉크 마르는 효과</span>${seg('pref:ink', [['0', '끔'], ['1', '켬']], p.ink ? '1' : '0')}</div>
+    <div class="fld"><span>기록 화면 손그림 (선·칸·버튼을 연필로)</span>${seg('pref:sketch', [['0', '끔'], ['1', '켬']], p.sketch ? '1' : '0')}</div>
     <button class="btn" data-act="analog" style="margin-bottom:.6rem">아날로그로 한 번에 (노트 · 연필 · 색연필 · 불렛저널)</button>
     <button class="btn" data-act="preset-reset">기본값으로</button>
   </div>`;
@@ -770,7 +771,7 @@ function hDesc(h) {
   const f = weekly(h) ? ` · ${wkText(h)}${wkAmt(h) && h.stretch ? `(도전 ${fmtGoal(h, h.stretch)})` : ''}` : h.days.length < 7 ? ' · ' + WDO.filter(x => h.days.includes(x)).map(x => WD[x]).join('') : '';
   return `${h.cat === 'life' ? '일상' : '공부'} · ${TY[h.type]}${g}${f}${wOf(h) > 1 ? ` · ${wOf(h) === 3 ? '핵심' : '중요'}` : ''}`;
 }
-const VER = 'v2.2';
+const VER = 'v2.3';
 const SET_ITEMS = [
   ['habits', '습관', () => `${habits().filter(h => !archived(h)).length}개`],
   ['dday', 'D-day', () => nextDday() ? `${nextDday().name} ${ddLabel(nextDday().date)}` : ''],
@@ -990,6 +991,7 @@ function applyPrefs() {
   R.dataset.heatst = p.heatSt || 'plain';
   R.dataset.mark = p.mark || 'box';
   R.dataset.ink = p.ink === false ? 'off' : 'on';
+  R.dataset.sketch = p.sketch ? 'on' : 'off';
   $('#tc').content = getComputedStyle(R).getPropertyValue('--bg').trim();
 }
 mq.addEventListener?.('change', applyPrefs);
@@ -1078,6 +1080,7 @@ function render() {
   applyPrefs(); hideTip();
   if (today() !== lastToday) { if (cur === lastToday) cur = today(); lastToday = today(); }
   $$('nav a').forEach(a => a.classList.toggle('on', a.dataset.v === view || (a.dataset.v === 'today' && view === 'week')));
+  $('#main').className = 'v-' + view;
   $('#main').innerHTML = ({ today: vToday, week: vWeek, stats: vStats, set: vSet, habit: vHabit }[view] || vToday)();
 }
 function softRender() {
@@ -1150,7 +1153,7 @@ document.addEventListener('click', e => {
     case 'mon': { const d = pd(ym + '-01'); d.setMonth(d.getMonth() + +b.dataset.n); ym = ds(d).slice(0, 7); render(); break; }
     case 'seg': {
       const p = b.parentElement;
-      if (p.dataset.f.startsWith('pref:')) { const k = p.dataset.f.slice(5), v = b.dataset.v; setPref({ [k]: k === 'weight' ? +v : ['partial', 'flip', 'ink'].includes(k) ? v === '1' : v }); break; }
+      if (p.dataset.f.startsWith('pref:')) { const k = p.dataset.f.slice(5), v = b.dataset.v; setPref({ [k]: k === 'weight' ? +v : ['partial', 'flip', 'ink', 'sketch'].includes(k) ? v === '1' : v }); break; }
       if (p.dataset.f === 'rng') { rng.m = b.dataset.v; render(); break; }
       if (p.dataset.f === 'htab') { hTab = b.dataset.v; render(); break; }
       $$('button', p).forEach(x => x.classList.toggle('on', x === b));
@@ -1202,7 +1205,7 @@ document.addEventListener('click', e => {
     case 'export': exportData(); break;
     case 'import': $('#file').click(); break;
     case 'diary': openPrint(diaryPage(view === 'stats' && rng.m === 'month' ? ym : today().slice(0, 7))); break;
-    case 'analog': setPref({ chart: 'pencil', heatSt: 'pencil', mark: 'bujo', flip: true, ink: true, style: 'note' }); toast('아날로그 설정을 적용했습니다'); break;
+    case 'analog': setPref({ chart: 'pencil', heatSt: 'pencil', mark: 'bujo', flip: true, ink: true, style: 'note', sketch: true }); toast('아날로그 설정을 적용했습니다'); break;
     case 'report': openReport(view === 'stats' && rng.m === 'month' ? ym : today().slice(0, 7)); break;
     case 'pclose': $('#print').classList.remove('show'); break;
     case 'pprint': window.print(); break;

@@ -486,3 +486,48 @@ a.btn{color:inherit;text-decoration:none;display:inline-block}
 .ledger .lm{width:3rem}
 .chk.bj{font-size:1.25rem}
 .chk.bj svg,.wc.bj svg,.ledger .lm svg{width:1.05rem;height:1.05rem;stroke-width:1.8;vertical-align:middle}
+
+/* ===== 기록 화면 손그림 (설정 → 디자인 → 아날로그) ===== */
+[data-sketch=on] :is(.v-today,.v-week){--pen:color-mix(in srgb,var(--text) 55%,transparent)}
+/* 카드 테두리 → 연필 테두리 */
+[data-sketch=on] :is(.v-today,.v-week) .card{border-color:transparent;position:relative}
+[data-sketch=on] :is(.v-today,.v-week) .card::before{content:"";position:absolute;inset:0;border:1px solid var(--pen);border-radius:2px;filter:url(#rough);pointer-events:none}
+[data-sketch=on][data-style=note] :is(.v-today,.v-week) .card:not(.list)::before{display:none}
+[data-sketch=on][data-style=note] :is(.v-today,.v-week) .card.list{border-top-color:transparent;border-bottom-color:transparent}
+[data-sketch=on][data-style=note] :is(.v-today,.v-week) .card.list::before{border-left:0;border-right:0;border-radius:0}
+/* 습관 줄 사이 → 연필 선 */
+[data-sketch=on] .v-today .hrow{border-bottom-color:transparent}
+[data-sketch=on] .v-today .hrow:not(:last-child)::after{content:"";position:absolute;left:.6rem;right:.6rem;bottom:-1px;height:1px;background:var(--pen);filter:url(#rough);pointer-events:none}
+/* 체크 칸 → 연필로 그린 네모, 완료는 빗금 + 손그림 체크 */
+[data-sketch=on] :is(.v-today,.v-week) .chk:not(.bj){border-color:transparent;background:none;position:relative;color:transparent}
+[data-sketch=on] :is(.v-today,.v-week) .chk:not(.bj)::before{content:"";position:absolute;inset:1px;border:1.3px solid var(--pen);filter:url(#sketch)}
+[data-sketch=on] :is(.v-today,.v-week) .chk.on:not(.bj){color:var(--text)}
+[data-sketch=on] :is(.v-today,.v-week) .chk.on:not(.bj)::before{border-color:var(--c);background:repeating-linear-gradient(-50deg,color-mix(in srgb,var(--c) 70%,transparent) 0 1.2px,transparent 1.2px 3.6px)}
+[data-sketch=on] :is(.v-today,.v-week) .chk svg{position:relative;stroke-width:2.2;filter:url(#sketch)}
+/* 버튼 · +/− · 휴식일 */
+[data-sketch=on] :is(.v-today,.v-week) :is(.btn,.ib){border-color:transparent;background:none;position:relative}
+[data-sketch=on] :is(.v-today,.v-week) :is(.btn,.ib)::before{content:"";position:absolute;inset:0;border:1px solid var(--pen);filter:url(#sketch);pointer-events:none}
+[data-sketch=on] :is(.v-today,.v-week) .btn.on::before{background:repeating-linear-gradient(-50deg,color-mix(in srgb,var(--accent) 90%,transparent) 0 1px,transparent 1px 3px)}
+/* 하루 · 주간 전환 */
+[data-sketch=on] :is(.v-today,.v-week) .seg{background:none}
+[data-sketch=on] :is(.v-today,.v-week) .seg button{position:relative}
+[data-sketch=on] :is(.v-today,.v-week) .seg button.on{background:none;box-shadow:none}
+[data-sketch=on] :is(.v-today,.v-week) .seg button.on::before{content:"";position:absolute;inset:2px;border:1px solid var(--pen);filter:url(#sketch)}
+/* 완료 취소선 → 손으로 그은 선 */
+[data-sketch=on] .v-today .hrow.ok .hname{text-decoration:none;position:relative;display:inline-block;max-width:100%;vertical-align:top}
+[data-sketch=on] .v-today .hrow.ok .hname::after{content:"";position:absolute;left:0;right:0;top:54%;height:1.3px;background:var(--pen);filter:url(#sketch);transform:rotate(-1.2deg)}
+/* 진행선 · 섹션 밑줄 */
+[data-sketch=on] .v-today .topline{background:none}
+[data-sketch=on] .v-today .topline i,[data-sketch=on] .v-today .pbar{filter:url(#rough)}
+[data-sketch=on] :is(.v-today,.v-week) h2{border-bottom-color:transparent!important;position:relative}
+[data-sketch=on][data-style=note] :is(.v-today,.v-week) h2::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1.2px;background:var(--text);filter:url(#sketch)}
+/* 시각 입력칸 */
+[data-sketch=on] .v-today .tin{background:none;border-color:var(--pen);border-style:dashed}
+/* 주간 표 칸 */
+[data-sketch=on] .v-week .wc{border-color:transparent;position:relative}
+[data-sketch=on] .v-week .wc::before{content:"";position:absolute;inset:1px;border:1px solid var(--pen);filter:url(#sketch);pointer-events:none}
+[data-sketch=on] .v-week .wc.n::before{border-style:dashed}
+[data-sketch=on] .v-week .wc.y:not(.bj){background:repeating-linear-gradient(-50deg,color-mix(in srgb,var(--c) 70%,transparent) 0 1.2px,transparent 1.2px 3.6px)!important;color:var(--text)}
+[data-sketch=on] .v-week .wc.y.m:not(.bj),[data-sketch=on] .v-week .wc.p{background:repeating-linear-gradient(-50deg,color-mix(in srgb,var(--c) 50%,transparent) 0 1px,transparent 1px 4.5px)!important;color:var(--text)}
+[data-sketch=on] .v-week .wc svg{filter:url(#sketch)}
+[data-sketch=on] .v-week .wt td,[data-sketch=on] .v-week .wt th{border-bottom-style:dashed}
