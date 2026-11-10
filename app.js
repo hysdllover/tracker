@@ -756,7 +756,7 @@ function designCard() {
     <div class="fld"><span>체크 표시</span>${seg('pref:mark', [['box', '칸'], ['bujo', '불렛저널 · • −']], p.mark)}</div>
     <div class="fld"><span>D-day 숫자</span>${seg('pref:flip', [['0', '기본'], ['1', '넘김식']], p.flip ? '1' : '0')}</div>
     <div class="fld"><span>잉크 마르는 효과</span>${seg('pref:ink', [['0', '끔'], ['1', '켬']], p.ink ? '1' : '0')}</div>
-    <div class="fld"><span>기록 화면 손그림 (선·칸·버튼을 연필로)</span>${seg('pref:sketch', [['0', '끔'], ['1', '켬']], p.sketch ? '1' : '0')}</div>
+    <div class="fld"><span>화면 손그림 (모든 화면의 선·칸·버튼을 연필로)</span>${seg('pref:sketch', [['0', '끔'], ['1', '켬']], p.sketch ? '1' : '0')}</div>
     <button class="btn" data-act="analog" style="margin-bottom:.6rem">아날로그로 한 번에 (노트 · 연필 · 색연필 · 불렛저널)</button>
     <button class="btn" data-act="preset-reset">기본값으로</button>
   </div>`;
@@ -773,7 +773,7 @@ function hDesc(h) {
   const f = weekly(h) ? ` · ${wkText(h)}${wkAmt(h) && h.stretch ? `(도전 ${fmtGoal(h, h.stretch)})` : ''}` : h.days.length < 7 ? ' · ' + WDO.filter(x => h.days.includes(x)).map(x => WD[x]).join('') : '';
   return `${h.cat === 'life' ? '일상' : '공부'} · ${TY[h.type]}${g}${f}${wOf(h) > 1 ? ` · ${wOf(h) === 3 ? '핵심' : '중요'}` : ''}`;
 }
-const VER = 'v2.3';
+const VER = 'v2.4';
 const SET_ITEMS = [
   ['habits', '습관', () => `${habits().filter(h => !archived(h)).length}개`],
   ['dday', 'D-day', () => nextDday() ? `${nextDday().name} ${ddLabel(nextDday().date)}` : ''],
